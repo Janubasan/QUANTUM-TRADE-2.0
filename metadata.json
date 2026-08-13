@@ -1,0 +1,8 @@
+{
+  "name": "Remix Quantum Trade - Multi-Broker \u0026 Multi-Bot Platform",
+  "description": "Plataforma completa de trading multi-broker, multi-bot, gestão de contas demo/real com regra de lucro acumulado e inteligência coletiva quântica.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

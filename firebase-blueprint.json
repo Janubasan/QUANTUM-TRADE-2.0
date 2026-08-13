@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "Config": {
+      "title": "Config",
+      "description": "Global operational configuration and compliance flags",
+      "type": "object",
+      "properties": {
+        "kill_switch": { "type": "boolean", "description": "Global kill switch status" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      }
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Validated and audited orders for brokerage compliance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique order ID" },
+        "account_id": { "type": "string", "description": "Account ID" },
+        "symbol": { "type": "string", "description": "Symbol traded" },
+        "side": { "type": "string", "description": "Order side: buy or sell" },
+        "quantity": { "type": "number", "description": "Quantity ordered" },
+        "price": { "type": "number", "description": "Requested price" },
+        "fill_price": { "type": "number", "description": "Realistic fill price with slippage" },
+        "slippage": { "type": "number", "description": "Slippage amount" },
+        "fee": { "type": "number", "description": "Brokerage fee amount" },
+        "net_notional": { "type": "number", "description": "Net notional after fees" },
+        "status": { "type": "string", "description": "Order status" },
+        "validated_at": { "type": "string", "description": "ISO timestamp of validation" },
+        "created_at": { "type": "string", "description": "ISO timestamp of creation" }
+      },
+      "required": ["id", "account_id", "symbol", "side", "quantity", "fill_price", "status"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Trading accounts (Demo and Real) with balance and statistics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique account ID" },
+        "name": { "type": "string", "description": "Display name of the account" },
+        "broker": { "type": "string", "description": "Broker identifier" },
+        "type": { "type": "string", "description": "Account type: demo or real" },
+        "initialBalance": { "type": "number", "description": "Initial capital allocated" },
+        "currentBalance": { "type": "number", "description": "Current real-time balance" },
+        "baseCurrency": { "type": "string", "description": "Currency code" },
+        "isActive": { "type": "boolean", "description": "Whether account is actively trading" },
+        "totalTrades": { "type": "number", "description": "Total trades executed" },
+        "winningTrades": { "type": "number", "description": "Number of winning trades" },
+        "pnlTotal": { "type": "number", "description": "Cumulative profit and loss" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["id", "name", "broker", "type", "currentBalance"]
+    },
+    "Trade": {
+      "title": "Trade",
+      "description": "Executed and open trading positions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique trade ID" },
+        "accountId": { "type": "string", "description": "Associated account ID" },
+        "botId": { "type": "string", "description": "Bot identifier" },
+        "symbol": { "type": "string", "description": "Asset pair" },
+        "direction": { "type": "string", "description": "Trade direction: LONG or SHORT" },
+        "entryPrice": { "type": "number", "description": "Executed entry price" },
+        "currentPrice": { "type": "number", "description": "Current market price" },
+        "quantity": { "type": "number", "description": "Order size" },
+        "tpPrice": { "type": "number", "description": "Take profit price target" },
+        "slPrice": { "type": "number", "description": "Stop loss price target" },
+        "status": { "type": "string", "description": "Status: open, closed, or cancelled" },
+        "pnl": { "type": "number", "description": "Net profit and loss in base currency" },
+        "pnlPercent": { "type": "number", "description": "Percentage gain or loss" },
+        "entryTime": { "type": "string", "description": "ISO timestamp of trade entry" },
+        "closeTime": { "type": "string", "description": "ISO timestamp of trade close" },
+        "notes": { "type": "string", "description": "Strategy notes" }
+      },
+      "required": ["id", "accountId", "symbol", "direction", "entryPrice", "quantity", "status"]
+    },
+    "Bot": {
+      "title": "Bot",
+      "description": "Configured autonomous trading bots",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Bot unique identifier" },
+        "name": { "type": "string", "description": "Bot label" },
+        "strategy": { "type": "string", "description": "Strategy code identifier" },
+        "status": { "type": "string", "description": "Status: running, paused, error" },
+        "winRate": { "type": "number", "description": "Win percentage" },
+        "totalTrades": { "type": "number", "description": "Executed trades count" },
+        "pnlTotal": { "type": "number", "description": "Total profit generated" },
+        "lastLog": { "type": "string", "description": "Last execution log message" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["id", "name", "strategy", "status"]
+    },
+    "RunnerStatus": {
+      "title": "RunnerStatus",
+      "description": "Continuous 24/7 background engine runner status and heartbeat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Runner instance identifier" },
+        "status": { "type": "string", "description": "Runner state" },
+        "uptimeSeconds": { "type": "number", "description": "Uptime duration in seconds" },
+        "totalTicks": { "type": "number", "description": "Total market evaluation cycles executed" },
+        "lastHeartbeat": { "type": "string", "description": "ISO timestamp of last heartbeat" },
+        "activeBotsCount": { "type": "number", "description": "Count of running bots" },
+        "openTradesCount": { "type": "number", "description": "Count of open positions" },
+        "firebaseSyncStatus": { "type": "string", "description": "Firebase sync status" }
+      },
+      "required": ["id", "status", "lastHeartbeat"]
+    },
+    "SystemLog": {
+      "title": "SystemLog",
+      "description": "Platform audit and 24/7 runner logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Log entry ID" },
+        "type": { "type": "string", "description": "Log type" },
+        "message": { "type": "string", "description": "Log message description" },
+        "timestamp": { "type": "string", "description": "ISO timestamp" },
+        "details": { "type": "object", "description": "Additional JSON metadata" }
+      },
+      "required": ["id", "type", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/config/{configId}": {
+      "schema": "Config",
+      "description": "Global operational configuration and compliance flags"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Validated and audited orders for brokerage compliance"
+    },
+    "/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "Trading accounts (Demo and Real) with balance and statistics"
+    },
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Executed and open trading positions"
+    },
+    "/bots/{botId}": {
+      "schema": "Bot",
+      "description": "Configured autonomous trading bots"
+    },
+    "/runner_status/{statusId}": {
+      "schema": "RunnerStatus",
+      "description": "Continuous 24/7 background engine runner status and heartbeat"
+    },
+    "/system_logs/{logId}": {
+      "schema": "SystemLog",
+      "description": "Platform audit and 24/7 runner logs"
+    }
+  }
+}
