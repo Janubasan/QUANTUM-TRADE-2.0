@@ -63,7 +63,11 @@ Projetado para operar de forma contínua com modos de execução **Scalp (Sub-mi
 janutrade/
 ├── server/
 │   ├── adapters/
-│   │   └── brokerAdapters.ts        # Abstração de corretoras (Binance, BYDFi, B3, Alpaca, MT5)
+│   │   ├── brokerAdapters.ts        # Factory (MT5/Proft reais + demais simulados)
+│   │   ├── mt5/                     # Ponte EA MetaTrader 5
+│   │   └── proft/                   # Ponte ProfitDLL + REST HMAC
+│   ├── routes/
+│   │   └── brokerBridgeRoutes.ts    # Heartbeat / commands / report / tokens
 │   ├── engine/
 │   │   ├── botWorker.ts             # Loop de execução de estratégias autônomas
 │   │   ├── profitRule.ts            # Motor de gerenciamento de risco e dimensionamento

@@ -1,47 +1,34 @@
-import { BrokerId, TradeDirection } from '../../src/types.js';
+import { BrokerId } from '../../src/types.js';
+import { BaseBrokerAdapter, OrderParams, OrderResult } from './base.js';
+import { Mt5Adapter } from './mt5/mt5Adapter.js';
+import { ProftAdapter } from './proft/proftAdapter.js';
 
-export interface OrderParams {
-  symbol: string;
-  direction: TradeDirection;
-  quantity: number;
-  price: number;
-  tpPrice: number;
-  slPrice: number;
-}
+export type { OrderParams, OrderResult };
+export { BaseBrokerAdapter };
 
-export interface OrderResult {
-  orderId: string;
-  status: 'filled' | 'pending' | 'rejected';
-  executedPrice: number;
-  timestamp: string;
-  rawResponse?: Record<string, unknown>;
-}
-
-export abstract class BaseBrokerAdapter {
-  abstract readonly brokerId: BrokerId;
-  abstract readonly name: string;
-
-  abstract getBalance(apiKey?: string, apiSecret?: string): Promise<number>;
-  abstract createOrder(params: OrderParams, apiKey?: string, apiSecret?: string): Promise<OrderResult>;
-  abstract cancelOrder(orderId: string): Promise<boolean>;
-}
-
-export class BinanceAdapter extends BaseBrokerAdapter {
-  readonly brokerId: BrokerId = 'binance';
-  readonly name = 'Binance Spot & Futures';
-
-  async getBalance(_apiKey?: string, _apiSecret?: string): Promise<number> {
-    // Standard Binance API call mockup / connector
-    return 1000.0;
+export class SimulatedBrokerAdapter extends BaseBrokerAdapter {
+  constructor(
+    readonly brokerId: BrokerId,
+    readonly name: string
+  ) {
+    super();
   }
 
-  async createOrder(params: OrderParams, _apiKey?: string, _apiSecret?: string): Promise<OrderResult> {
+  async getBalance(_apiKey?: string, _apiSecret?: string): Promise<number> {
+    return 0;
+  }
+
+  async createOrder(params: OrderParams): Promise<OrderResult> {
     return {
-      orderId: `BN-${Date.now()}`,
+      orderId: `SIM-${this.brokerId}-${Date.now()}`,
       status: 'filled',
       executedPrice: params.price,
       timestamp: new Date().toISOString(),
-      rawResponse: { exchange: 'Binance', type: 'MARKET', symbol: params.symbol },
+      rawResponse: {
+        venue: this.brokerId,
+        simulated: true,
+        warning: 'Adaptador simulado. Não envia ordem a corretora real.',
+      },
     };
   }
 
@@ -50,84 +37,59 @@ export class BinanceAdapter extends BaseBrokerAdapter {
   }
 }
 
-export class MercadoBitcoinAdapter extends BaseBrokerAdapter {
-  readonly brokerId: BrokerId = 'mercado_bitcoin';
-  readonly name = 'Mercado Bitcoin (v4 API BRL)';
-
-  async getBalance(_apiKey?: string, _apiSecret?: string): Promise<number> {
-    return 500.0;
-  }
-
-  async createOrder(params: OrderParams, _apiKey?: string, _apiSecret?: string): Promise<OrderResult> {
-    return {
-      orderId: `MB-${Date.now()}`,
-      status: 'filled',
-      executedPrice: params.price,
-      timestamp: new Date().toISOString(),
-      rawResponse: { exchange: 'Mercado Bitcoin v4', symbol: params.symbol },
-    };
-  }
-
-  async cancelOrder(_orderId: string): Promise<boolean> {
-    return true;
+export class BinanceAdapter extends SimulatedBrokerAdapter {
+  constructor() {
+    super('binance', 'Binance Spot & Futures (simulado até chaves reais)');
   }
 }
 
-export class InteractiveBrokersAdapter extends BaseBrokerAdapter {
-  readonly brokerId: BrokerId = 'ibkr';
-  readonly name = 'Interactive Brokers (TWS REST Gateway)';
-
-  async getBalance(_apiKey?: string, _apiSecret?: string): Promise<number> {
-    return 2500.0;
-  }
-
-  async createOrder(params: OrderParams, _apiKey?: string, _apiSecret?: string): Promise<OrderResult> {
-    return {
-      orderId: `IBKR-${Date.now()}`,
-      status: 'filled',
-      executedPrice: params.price,
-      timestamp: new Date().toISOString(),
-      rawResponse: { exchange: 'IBKR Gateway', symbol: params.symbol },
-    };
-  }
-
-  async cancelOrder(_orderId: string): Promise<boolean> {
-    return true;
+export class MercadoBitcoinAdapter extends SimulatedBrokerAdapter {
+  constructor() {
+    super('mercado_bitcoin', 'Mercado Bitcoin v4 (simulado até chaves reais)');
   }
 }
 
-export class BybitAdapter extends BaseBrokerAdapter {
-  readonly brokerId: BrokerId = 'bybit';
-  readonly name = 'Bybit V5 Derivatives';
-
-  async getBalance(_apiKey?: string, _apiSecret?: string): Promise<number> {
-    return 800.0;
+export class InteractiveBrokersAdapter extends SimulatedBrokerAdapter {
+  constructor() {
+    super('ibkr', 'Interactive Brokers (simulado até TWS Gateway)');
   }
+}
 
-  async createOrder(params: OrderParams, _apiKey?: string, _apiSecret?: string): Promise<OrderResult> {
-    return {
-      orderId: `BYBIT-${Date.now()}`,
-      status: 'filled',
-      executedPrice: params.price,
-      timestamp: new Date().toISOString(),
-      rawResponse: { exchange: 'Bybit V5', symbol: params.symbol },
-    };
-  }
-
-  async cancelOrder(_orderId: string): Promise<boolean> {
-    return true;
+export class BybitAdapter extends SimulatedBrokerAdapter {
+  constructor() {
+    super('bybit', 'Bybit V5 (simulado até chaves reais)');
   }
 }
 
 export class BrokerAdapterFactory {
-  private static adapters: Record<BrokerId, BaseBrokerAdapter> = {
-    binance: new BinanceAdapter(),
-    mercado_bitcoin: new MercadoBitcoinAdapter(),
-    ibkr: new InteractiveBrokersAdapter(),
-    bybit: new BybitAdapter(),
-  };
+  private static adapters: Partial<Record<BrokerId, BaseBrokerAdapter>> = {};
 
   static getAdapter(brokerId: BrokerId): BaseBrokerAdapter {
-    return this.adapters[brokerId] || this.adapters.binance;
+    if (!this.adapters[brokerId]) {
+      this.adapters[brokerId] = this.create(brokerId);
+    }
+    return this.adapters[brokerId]!;
+  }
+
+  private static create(brokerId: BrokerId): BaseBrokerAdapter {
+    switch (brokerId) {
+      case 'mt5':
+        return new Mt5Adapter();
+      case 'proft':
+        return new ProftAdapter();
+      case 'mercado_bitcoin':
+        return new MercadoBitcoinAdapter();
+      case 'ibkr':
+        return new InteractiveBrokersAdapter();
+      case 'bybit':
+        return new BybitAdapter();
+      case 'binance':
+      default:
+        return new BinanceAdapter();
+    }
+  }
+
+  static isVenueBroker(brokerId: BrokerId): boolean {
+    return brokerId === 'mt5' || brokerId === 'proft';
   }
 }

@@ -3,6 +3,7 @@ import { validateProfitRule } from '../engine/profitRule.js';
 import { Trade, WebhookAuditLog, Account } from '../../src/types.js';
 import { defaultSigner } from '../validation/signer.js';
 import { defaultVerifier } from '../validation/verifier.js';
+import { executeTradeOnVenue, shouldRouteToVenue } from './brokerExecutionService.js';
 
 export interface SignalPayload {
   secret: string;
@@ -159,7 +160,11 @@ class WebhookEngine {
     }
 
     // 5. Select target account (Prefer active Real/Demo account)
-    const activeAccount = state.accounts.find((a) => a.isActive) || state.accounts[0];
+    const activeAccount =
+      state.accounts.find((a) => a.isActive && shouldRouteToVenue(a) && a.connectionStatus === 'online') ||
+      state.accounts.find((a) => a.isActive && shouldRouteToVenue(a)) ||
+      state.accounts.find((a) => a.isActive) ||
+      state.accounts[0];
     if (!activeAccount) {
       const audit: WebhookAuditLog = {
         id: auditId,
@@ -208,9 +213,14 @@ class WebhookEngine {
       pnlPercent: 0,
       entryTime: new Date().toISOString(),
       notes: `Ordem executada via Webhook TV (${payload.order_id}). Latência: ${latencyMs}ms, Slippage: ${slippagePercent}%`,
+      executionMode: shouldRouteToVenue(activeAccount) ? 'venue' : 'simulated',
+      venueStatus: shouldRouteToVenue(activeAccount) ? 'queued' : undefined,
     };
 
     store.addTrade(executedTrade);
+    if (shouldRouteToVenue(activeAccount)) {
+      await executeTradeOnVenue(activeAccount, executedTrade);
+    }
 
     const audit: WebhookAuditLog = {
       id: auditId,
@@ -222,21 +232,23 @@ class WebhookEngine {
       marketPrice: currentMarketPrice,
       latencyMs,
       slippagePercent,
-      status: 'EXECUTED',
+      status: shouldRouteToVenue(activeAccount) ? 'QUEUED_VENUE' : 'EXECUTED',
       brokerAccount: `${activeAccount.name} (${activeAccount.broker.toUpperCase()})`,
       accountType: activeAccount.type,
-      reason: `[AUDIT SUCCESS] Ordem preenchida com sucesso! Preço médio: ${currentMarketPrice}, Latência: ${latencyMs}ms, Slippage: ${slippagePercent}%.`,
+      reason: shouldRouteToVenue(activeAccount)
+        ? `[AUDIT QUEUED] Ordem enviada à venue ${activeAccount.broker.toUpperCase()} (pendente de fill real).`
+        : `[AUDIT SUCCESS] Ordem simulada. Preço médio: ${currentMarketPrice}, Latência: ${latencyMs}ms.`,
       timestamp: new Date().toISOString(),
     };
 
     store.addWebhookAudit(audit);
     store.addLog(
       'TRADE',
-      `[WEBHOOK TV EXECUTION] Ordem ${direction} ${normalizedSymbol} executada na conta ${activeAccount.name}. Latência: ${latencyMs}ms.`,
+      `[WEBHOOK] Ordem ${direction} ${normalizedSymbol} na conta ${activeAccount.name}. Latência: ${latencyMs}ms.`,
       { orderId: payload.order_id, price: currentMarketPrice }
     );
 
-    return { processed: true, status: 'EXECUTED', audit };
+    return { processed: true, status: audit.status, audit };
   }
 }
 

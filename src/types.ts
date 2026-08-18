@@ -1,6 +1,19 @@
-export type BrokerId = 'binance' | 'mercado_bitcoin' | 'ibkr' | 'bybit';
+export type BrokerId = 'binance' | 'mercado_bitcoin' | 'ibkr' | 'bybit' | 'mt5' | 'proft';
 
 export type AccountType = 'demo' | 'real';
+
+export type VenueEnvironment = 'demo' | 'live';
+export type VenueConnectionStatus = 'offline' | 'online' | 'degraded';
+export type ExecutionMode = 'simulated' | 'venue';
+export type VenueOrderStatus =
+  | 'queued'
+  | 'sent'
+  | 'filled'
+  | 'partial'
+  | 'rejected'
+  | 'cancelled'
+  | 'expired'
+  | 'offline';
 
 export interface Account {
   id: string;
@@ -17,10 +30,26 @@ export interface Account {
   totalTrades: number;
   winningTrades: number;
   pnlTotal: number;
+  venueEnvironment?: VenueEnvironment;
+  routeToVenue?: boolean;
+  allowLiveExecution?: boolean;
+  connectionStatus?: VenueConnectionStatus;
+  lastHeartbeat?: string;
+  mt5Login?: string;
+  mt5Server?: string;
+  mt5Company?: string;
+  bridgeTokenHint?: string;
+  proftBaseUrl?: string;
+  proftAccountId?: string;
+  liveEquity?: number;
+  liveBalance?: number;
+  liveCurrency?: string;
+  liveMargin?: number;
+  liveLeverage?: number;
 }
 
 export type TradeDirection = 'LONG' | 'SHORT';
-export type TradeStatus = 'open' | 'closed' | 'cancelled';
+export type TradeStatus = 'pending' | 'open' | 'closed' | 'cancelled' | 'rejected';
 
 export interface Trade {
   id: string;
@@ -43,6 +72,14 @@ export interface Trade {
   botId?: string;
   botName?: string;
   notes?: string;
+  executionMode?: ExecutionMode;
+  venueStatus?: VenueOrderStatus;
+  venueCommandId?: string;
+  brokerTicket?: string;
+  brokerDeal?: string;
+  brokerRetcode?: string;
+  venueFillPrice?: number;
+  venueRaw?: Record<string, unknown>;
 }
 
 export type StrategyId =
@@ -110,6 +147,7 @@ export interface Ticker {
   low24h: number;
   volume24h: number;
   updatedAt: string;
+  source?: string;
 }
 
 export interface EntanglementAnomaly {
@@ -173,7 +211,8 @@ export type WebhookStatus =
   | 'REJECTED_SLIPPAGE'
   | 'REJECTED_DUPLICATE'
   | 'AUTH_FAILED'
-  | 'ERROR';
+  | 'ERROR'
+  | 'QUEUED_VENUE';
 
 export interface WebhookAuditLog {
   id: string;
@@ -198,4 +237,70 @@ export interface WebhookConfig {
   tradingViewTemplate: string;
   maxLatencySeconds: number;
   maxSlippagePercent: number;
+}
+
+export interface VenueCommand {
+  id: string;
+  accountId: string;
+  venue: 'mt5' | 'proft';
+  action: 'open' | 'close' | 'modify' | 'cancel' | 'ping';
+  symbol: string;
+  direction?: TradeDirection;
+  volume: number;
+  price?: number;
+  sl?: number;
+  tp?: number;
+  comment?: string;
+  magic?: number;
+  ticket?: string;
+  tradeId?: string;
+  createdAt: string;
+  expiresAt: string;
+  status: VenueOrderStatus;
+}
+
+export interface VenueSession {
+  accountId: string;
+  venue: 'mt5' | 'proft';
+  connected: boolean;
+  lastHeartbeat: string;
+  login?: string;
+  server?: string;
+  company?: string;
+  tradeMode?: string;
+  balance?: number;
+  equity?: number;
+  margin?: number;
+  freeMargin?: number;
+  currency?: string;
+  leverage?: number;
+  terminalBuild?: string;
+  agentVersion?: string;
+  positions: VenuePosition[];
+  quotes: Record<string, number>;
+}
+
+export interface VenuePosition {
+  ticket: string;
+  symbol: string;
+  direction: TradeDirection;
+  volume: number;
+  priceOpen: number;
+  priceCurrent: number;
+  sl: number;
+  tp: number;
+  profit: number;
+  comment?: string;
+}
+
+export interface BrokerExecutionEvent {
+  id: string;
+  timestamp: string;
+  accountId: string;
+  venue: string;
+  environment: VenueEnvironment;
+  stage: string;
+  symbol: string;
+  payload: Record<string, unknown>;
+  hash: string;
 }

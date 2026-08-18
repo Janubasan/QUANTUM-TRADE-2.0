@@ -390,6 +390,43 @@ export async function signOperationalGuardPayload(payload: Record<string, unknow
   });
 }
 
+export async function fetchIntegrationStatus(): Promise<any> {
+  return requestJson('/api/integrations/status');
+}
+
+export async function fetchVenueAudit(accountId?: string): Promise<any[]> {
+  const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
+  return requestJson(`/api/integrations/audit${qs}`);
+}
+
+export async function issueBridgeToken(accountId: string): Promise<{ token: string; hint: string; accountId: string }> {
+  return requestJson(`/api/accounts/${accountId}/bridge-token`, { method: 'POST' });
+}
+
+export async function updateAccountRouting(
+  accountId: string,
+  data: { routeToVenue?: boolean; allowLiveExecution?: boolean; venueEnvironment?: 'demo' | 'live' }
+): Promise<Account> {
+  return requestJson(`/api/accounts/${accountId}/routing`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function sendVenueTestOrder(data: {
+  accountId: string;
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  quantity: number;
+}): Promise<any> {
+  return requestJson('/api/integrations/test-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
 
 
 

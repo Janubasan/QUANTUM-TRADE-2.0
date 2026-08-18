@@ -26,8 +26,18 @@ export const CRYPTO_RULES: MarketRules = {
   minIntervalBetweenOrdersSec: 0.2,
 };
 
+export const MT5_RULES: MarketRules = {
+  maxOrdersPerSecond: 2,
+  maxOrdersPerMinute: 40,
+  maxOrdersPerHour: 400,
+  minIntervalBetweenOrdersSec: 0.5,
+};
+
 export const EXCHANGE_RULES: Record<string, MarketRules> = {
   B3: B3_RULES,
+  PROFT: B3_RULES,
+  PROFIT: B3_RULES,
+  MT5: MT5_RULES,
   NYSE: US_MARKET_RULES,
   NASDAQ: US_MARKET_RULES,
   BINANCE: CRYPTO_RULES,

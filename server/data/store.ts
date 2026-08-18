@@ -1,5 +1,6 @@
 import { Account, Bot, Trade, SignalExperience, SystemLog, Ticker, WebhookAuditLog } from '../../src/types.js';
 import { realisticExecutionService } from '../services/realisticExecutionService.js';
+import { credentialVault } from '../services/credentialVault.js';
 
 export interface AppState {
   accounts: Account[];
@@ -59,6 +60,66 @@ const initialTickers: Record<string, Ticker> = {
     volume24h: 1900000000,
     updatedAt: new Date().toISOString(),
   },
+  'EUR/USD': {
+    symbol: 'EUR/USD',
+    price: 1.0864,
+    change24h: 0.12,
+    high24h: 1.089,
+    low24h: 1.082,
+    volume24h: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'mt5',
+  },
+  EURUSD: {
+    symbol: 'EURUSD',
+    price: 1.0864,
+    change24h: 0.12,
+    high24h: 1.089,
+    low24h: 1.082,
+    volume24h: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'mt5',
+  },
+  'XAU/USD': {
+    symbol: 'XAU/USD',
+    price: 2385.4,
+    change24h: 0.45,
+    high24h: 2398,
+    low24h: 2368,
+    volume24h: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'mt5',
+  },
+  XAUUSD: {
+    symbol: 'XAUUSD',
+    price: 2385.4,
+    change24h: 0.45,
+    high24h: 2398,
+    low24h: 2368,
+    volume24h: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'mt5',
+  },
+  'WIN$': {
+    symbol: 'WIN$',
+    price: 128450,
+    change24h: 0.8,
+    high24h: 129100,
+    low24h: 127200,
+    volume24h: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'proft',
+  },
+  'WDO$': {
+    symbol: 'WDO$',
+    price: 5.62,
+    change24h: -0.15,
+    high24h: 5.68,
+    low24h: 5.58,
+    volume24h: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'proft',
+  },
 };
 
 // Initial accounts
@@ -76,6 +137,44 @@ const initialAccounts: Account[] = [
     totalTrades: 0,
     winningTrades: 0,
     pnlTotal: 0.0,
+  },
+  {
+    id: 'acc-mt5-demo',
+    name: 'MT5 Demo Auditado',
+    broker: 'mt5',
+    type: 'demo',
+    initialBalance: 10000,
+    currentBalance: 10000,
+    baseCurrency: 'USD',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    totalTrades: 0,
+    winningTrades: 0,
+    pnlTotal: 0,
+    venueEnvironment: 'demo',
+    routeToVenue: true,
+    allowLiveExecution: false,
+    connectionStatus: 'offline',
+    mt5Server: 'MetaQuotes-Demo',
+  },
+  {
+    id: 'acc-proft-demo',
+    name: 'Proft / Profit Demo Auditado',
+    broker: 'proft',
+    type: 'demo',
+    initialBalance: 10000,
+    currentBalance: 10000,
+    baseCurrency: 'BRL',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    totalTrades: 0,
+    winningTrades: 0,
+    pnlTotal: 0,
+    venueEnvironment: 'demo',
+    routeToVenue: true,
+    allowLiveExecution: false,
+    connectionStatus: 'offline',
+    proftBaseUrl: process.env.PROFT_API_BASE_URL,
   },
 ];
 
@@ -277,6 +376,8 @@ const initialLogs: SystemLog[] = [
 ];
 
 export class DataStore {
+  public issuedDemoTokens: Record<string, string> = {};
+
   private state: AppState = {
     accounts: [...initialAccounts],
     bots: [...initialBots],
@@ -286,6 +387,17 @@ export class DataStore {
     tickers: { ...initialTickers },
     webhookAudits: [],
   };
+
+  constructor() {
+    for (const account of this.state.accounts) {
+      if (account.broker === 'mt5' || account.broker === 'proft') {
+        const issued = credentialVault.generateBridgeToken();
+        credentialVault.put(account.id, { bridgeTokenHash: issued.hash });
+        account.bridgeTokenHint = issued.hint;
+        this.issuedDemoTokens[account.id] = issued.token;
+      }
+    }
+  }
 
   getState(): AppState {
     return this.state;
@@ -349,22 +461,28 @@ export class DataStore {
   }
 
   resetDataStore() {
-    this.state.accounts = [
-      {
-        id: 'acc-demo-1',
-        name: 'Desafio R$100 Demo (Simulado)',
-        broker: 'binance',
-        type: 'demo',
-        initialBalance: 100.0,
-        currentBalance: 100.0,
-        baseCurrency: 'BRL',
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        totalTrades: 0,
-        winningTrades: 0,
-        pnlTotal: 0.0,
-      },
-    ];
+    this.state.accounts = this.state.accounts.map((account) => {
+      if (account.id === 'acc-demo-1') {
+        return {
+          ...account,
+          initialBalance: 100.0,
+          currentBalance: 100.0,
+          pnlTotal: 0.0,
+          totalTrades: 0,
+          winningTrades: 0,
+        };
+      }
+      if (account.broker === 'mt5' || account.broker === 'proft') {
+        return {
+          ...account,
+          pnlTotal: 0,
+          totalTrades: 0,
+          winningTrades: 0,
+          connectionStatus: account.connectionStatus || 'offline',
+        };
+      }
+      return account;
+    });
     this.state.trades = [];
     this.state.signals = [];
     realisticExecutionService.resetCounts();

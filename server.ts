@@ -20,12 +20,16 @@ import { runner247Service } from './server/engine/runner247Service.js';
 import { firebaseService } from './server/services/firebaseService.js';
 import { operationalGuard } from './server/services/operationalGuard.js';
 import { Account, Bot, Trade } from './src/types.js';
+import { registerBrokerBridgeRoutes } from './server/routes/brokerBridgeRoutes.js';
+import { credentialVault } from './server/services/credentialVault.js';
+import { executeTradeOnVenue, closeTradeOnVenue, shouldRouteToVenue } from './server/services/brokerExecutionService.js';
+import { BrokerAdapterFactory } from './server/adapters/brokerAdapters.js';
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
 
   // Global Kill Switch middleware for execution endpoints (Checks in-memory & Firestore state)
   app.use(async (req, res, next) => {
@@ -34,6 +38,7 @@ async function startServer() {
       req.path.startsWith('/api/trades/manual') ||
       req.path.startsWith('/api/close') ||
       req.path.startsWith('/api/bot/evaluate') ||
+      req.path.startsWith('/api/integrations/test-order') ||
       req.path.startsWith('/webhook/trade') ||
       req.path.startsWith('/api/webhook/trade')
     ) {
@@ -48,6 +53,8 @@ async function startServer() {
     }
     next();
   });
+
+  registerBrokerBridgeRoutes(app);
 
   // --- KILL SWITCH CONTROL ENDPOINTS (Synced with Firestore & Memory) ---
   app.post('/api/killswitch/toggle', async (_req, res) => {
@@ -206,7 +213,10 @@ async function startServer() {
       };
 
       store.addTrade(newTrade);
-      store.addLog('TRADE', `Ordem manual criada em ${symbol} (${direction} @ R$ ${executedPrice.toFixed(2)}). Guard OK.`);
+      if (shouldRouteToVenue(account)) {
+        await executeTradeOnVenue(account, newTrade);
+      }
+      store.addLog('TRADE', `Ordem manual criada em ${symbol} (${direction} @ ${executedPrice.toFixed(2)}). Guard OK.`);
 
       res.json({
         success: true,
@@ -215,6 +225,7 @@ async function startServer() {
         estimatedDurationSeconds,
         executedPrice,
         fee,
+        routedToVenue: shouldRouteToVenue(account),
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Erro ao abrir operação.' });
@@ -501,29 +512,70 @@ async function startServer() {
   });
 
   app.post('/api/accounts', (req, res) => {
-    const { name, broker, type, initialBalance, baseCurrency, apiKeyEncrypted, apiSecretEncrypted } = req.body;
+    const {
+      name,
+      broker,
+      type,
+      initialBalance,
+      baseCurrency,
+      apiKeyEncrypted,
+      apiSecretEncrypted,
+      mt5Login,
+      mt5Server,
+      mt5Password,
+      proftBaseUrl,
+      proftAccountId,
+      routeToVenue,
+      venueEnvironment,
+    } = req.body;
     const balance = Number(initialBalance) || (type === 'demo' ? 100 : 500);
+    const brokerId = broker || 'binance';
+    const isVenue = BrokerAdapterFactory.isVenueBroker(brokerId);
+    const issued = isVenue ? credentialVault.generateBridgeToken() : null;
 
     const newAccount: Account = {
       id: `acc-${Date.now()}`,
-      name: name || `Conta ${broker.toUpperCase()}`,
-      broker: broker || 'binance',
+      name: name || `Conta ${String(brokerId).toUpperCase()}`,
+      broker: brokerId,
       type: type || 'demo',
       initialBalance: balance,
       currentBalance: balance,
-      baseCurrency: baseCurrency || 'BRL',
-      apiKeyEncrypted: apiKeyEncrypted ? `AES256:${apiKeyEncrypted.slice(0, 6)}...` : undefined,
-      apiSecretEncrypted: apiSecretEncrypted ? `AES256:${apiSecretEncrypted.slice(0, 6)}...` : undefined,
+      baseCurrency: baseCurrency || (brokerId === 'mt5' ? 'USD' : 'BRL'),
+      apiKeyEncrypted: apiKeyEncrypted ? `AES256:${String(apiKeyEncrypted).slice(0, 6)}...` : undefined,
+      apiSecretEncrypted: apiSecretEncrypted ? `AES256:${String(apiSecretEncrypted).slice(0, 6)}...` : undefined,
       isActive: true,
       createdAt: new Date().toISOString(),
       totalTrades: 0,
       winningTrades: 0,
       pnlTotal: 0,
+      mt5Login,
+      mt5Server,
+      proftBaseUrl: proftBaseUrl || process.env.PROFT_API_BASE_URL,
+      proftAccountId,
+      venueEnvironment: venueEnvironment === 'live' ? 'live' : 'demo',
+      routeToVenue: typeof routeToVenue === 'boolean' ? routeToVenue : isVenue,
+      allowLiveExecution: false,
+      connectionStatus: isVenue ? 'offline' : undefined,
+      bridgeTokenHint: issued?.hint,
     };
+
+    if (issued || apiKeyEncrypted || apiSecretEncrypted || mt5Password) {
+      credentialVault.put(newAccount.id, {
+        apiKey: apiKeyEncrypted,
+        apiSecret: apiSecretEncrypted,
+        mt5Password,
+        proftSecret: apiSecretEncrypted,
+        bridgeTokenHash: issued?.hash,
+      });
+    }
 
     store.addAccount(newAccount);
     store.addLog('INFO', `Nova conta criada: ${newAccount.name} (${newAccount.type.toUpperCase()} - ${newAccount.broker.toUpperCase()}).`);
-    res.json(newAccount);
+    res.json({
+      ...newAccount,
+      bridgeToken: issued?.token,
+      bridgeTokenWarning: issued ? 'Guarde o bridge token. Ele não será exibido novamente.' : undefined,
+    });
   });
 
   app.post('/api/accounts/:id/reset', (req, res) => {
@@ -641,6 +693,9 @@ async function startServer() {
     };
 
     store.addTrade(manualTrade);
+    if (shouldRouteToVenue(account)) {
+      await executeTradeOnVenue(account, manualTrade);
+    }
     store.addLog('TRADE', `Trade manual aberto por usuário na conta ${account.name} (${direction} ${symbol}).`);
     res.json(manualTrade);
   });

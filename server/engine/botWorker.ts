@@ -2,6 +2,7 @@ import { store } from '../data/store.js';
 import { validateProfitRule } from './profitRule.js';
 import { BrokerAdapterFactory } from '../adapters/brokerAdapters.js';
 import { Trade, SignalExperience } from '../../src/types.js';
+import { executeTradeOnVenue, shouldRouteToVenue } from '../services/brokerExecutionService.js';
 import { defaultSigner } from '../validation/signer.js';
 import { defaultVerifier } from '../validation/verifier.js';
 import { killSwitchService } from '../services/killSwitchService.js';
@@ -87,6 +88,9 @@ export class BotWorker {
       const openTrades = state.trades.filter((t) => t.botId === bot.id && t.status === 'open');
 
       openTrades.forEach((trade) => {
+        if (trade.executionMode === 'venue') {
+          return;
+        }
         trade.currentPrice = ticker.price;
         const isLong = trade.direction === 'LONG';
 
@@ -162,9 +166,14 @@ export class BotWorker {
       });
 
       // 4. Trigger new trades if under maximum open position limit (up to 5 concurrent trades per bot)
-      const remainingOpenCount = state.trades.filter((t) => t.botId === bot.id && t.status === 'open').length;
+      const remainingOpenCount = state.trades.filter(
+        (t) => t.botId === bot.id && (t.status === 'open' || t.status === 'pending')
+      ).length;
 
-      if (remainingOpenCount < 5 && Math.random() < 0.80) {
+      const venueAccount = shouldRouteToVenue(account);
+      const fireChance = venueAccount ? 0.02 : 0.8;
+      const maxOpen = venueAccount ? 1 : 5;
+      if (remainingOpenCount < maxOpen && Math.random() < fireChance) {
         // A. Order Frequency Check (max 60 orders/hour)
         const freqCheck = realisticExecutionService.checkOrderFrequency(account.id, account.broker);
         if (!freqCheck.allowed) {
@@ -272,20 +281,6 @@ export class BotWorker {
           ? Number((entryPrice * (1 - (riskMult / 1.5) * (bot.config.slRatio || 1.0))).toFixed(2))
           : Number((entryPrice * (1 + (riskMult / 1.5) * (bot.config.slRatio || 1.0))).toFixed(2));
 
-        const adapter = BrokerAdapterFactory.getAdapter(account.broker);
-        adapter.createOrder(
-          {
-            symbol: bot.config.symbol,
-            direction,
-            quantity,
-            price: entryPrice,
-            tpPrice,
-            slPrice,
-          },
-          account.apiKeyEncrypted,
-          account.apiSecretEncrypted
-        );
-
         let tradeNotes = `Trade executado por ${bot.name}. ${validation.reason} [Slippage: 0.05%, Fee: 0.1%]`;
         let botLogMessage = `🚀 Nova Ordem Executada (${direction} ${bot.config.symbol} @ R$ ${entryPrice.toFixed(2)}). Slippage/Fee inclusos.`;
 
@@ -319,9 +314,30 @@ export class BotWorker {
           botId: bot.id,
           botName: bot.name,
           notes: tradeNotes,
+          executionMode: shouldRouteToVenue(account) ? 'venue' : 'simulated',
+          venueStatus: shouldRouteToVenue(account) ? 'queued' : undefined,
         };
 
         store.addTrade(newTrade);
+        if (shouldRouteToVenue(account)) {
+          await executeTradeOnVenue(account, newTrade);
+        } else {
+          const adapter = BrokerAdapterFactory.getAdapter(account.broker);
+          void adapter.createOrder(
+            {
+              symbol: bot.config.symbol,
+              direction,
+              quantity,
+              price: entryPrice,
+              tpPrice,
+              slPrice,
+              accountId: account.id,
+              tradeId: newTrade.id,
+            },
+            account.apiKeyEncrypted,
+            account.apiSecretEncrypted
+          );
+        }
         realisticExecutionService.recordOrder(account.id, account.broker);
         bot.lastLog = botLogMessage;
         bot.lastExecutionTime = new Date().toISOString();

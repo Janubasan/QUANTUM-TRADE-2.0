@@ -18,6 +18,7 @@ import { EntanglementView } from './components/EntanglementView';
 
 import { BacktestingView } from './components/BacktestingView';
 import { TradeHistoryView } from './components/TradeHistoryView';
+import { IntegrationsView } from './components/IntegrationsView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -139,6 +140,10 @@ export default function App() {
 
         {activeTab === 'accounts' && (
           <AccountsView accounts={accounts} onRefreshData={loadData} />
+        )}
+
+        {activeTab === 'integrations' && (
+          <IntegrationsView accounts={accounts} onRefreshData={loadData} />
         )}
 
         {activeTab === 'bots' && (

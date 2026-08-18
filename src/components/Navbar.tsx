@@ -11,6 +11,7 @@ import {
   Activity,
   PlusCircle,
   Webhook,
+  Cable,
 } from 'lucide-react';
 
 
@@ -43,6 +44,7 @@ export function Navbar({
   const tabs = [
     { id: 'dashboard', label: 'Dashboard Quântico', icon: LayoutDashboard },
     { id: 'accounts', label: 'Contas Multi-Broker', icon: Wallet },
+    { id: 'integrations', label: 'MT5 & Proft', icon: Cable },
     { id: 'bots', label: 'Bots Autônomos', icon: BotIcon, badge: activeBotsCount },
     { id: 'validation', label: 'Validação RAG & Hashes', icon: ShieldCheck },
     { id: 'webhook', label: 'Webhook & Sinais', icon: Webhook },

@@ -25,6 +25,9 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
   const [initialBalance, setInitialBalance] = useState<number>(100);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
+  const [mt5Login, setMt5Login] = useState('');
+  const [mt5Server, setMt5Server] = useState('MetaQuotes-Demo');
+  const [proftBaseUrl, setProftBaseUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const brokerLabels: Record<BrokerId, { name: string; color: string }> = {
@@ -32,6 +35,8 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
     mercado_bitcoin: { name: 'Mercado Bitcoin (BRL v4)', color: 'border-blue-500/40 text-blue-400 bg-blue-500/10' },
     ibkr: { name: 'Interactive Brokers (IBKR)', color: 'border-rose-500/40 text-rose-400 bg-rose-500/10' },
     bybit: { name: 'Bybit Derivatives', color: 'border-purple-500/40 text-purple-400 bg-purple-500/10' },
+    mt5: { name: 'MetaTrader 5 (EA Bridge)', color: 'border-cyan-500/40 text-cyan-400 bg-cyan-500/10' },
+    proft: { name: 'Proft / Profit Chart', color: 'border-fuchsia-500/40 text-fuchsia-400 bg-fuchsia-500/10' },
   };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -45,7 +50,12 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
         initialBalance,
         apiKeyEncrypted: apiKey,
         apiSecretEncrypted: apiSecret,
-      });
+        mt5Login,
+        mt5Server,
+        proftBaseUrl,
+        routeToVenue: broker === 'mt5' || broker === 'proft',
+        venueEnvironment: type === 'real' ? 'live' : 'demo',
+      } as any);
       setIsModalOpen(false);
       setName('');
       setApiKey('');
@@ -261,6 +271,45 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                   className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
                 />
               </div>
+
+              {(broker === 'mt5' || broker === 'proft') && (
+                <div className="space-y-3 pt-2 border-t border-white/10">
+                  {broker === 'mt5' && (
+                    <>
+                      <div>
+                        <label className="text-white/50 block mb-1">Login MT5</label>
+                        <input
+                          type="text"
+                          value={mt5Login}
+                          onChange={(e) => setMt5Login(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-white/50 block mb-1">Servidor MT5</label>
+                        <input
+                          type="text"
+                          value={mt5Server}
+                          onChange={(e) => setMt5Server(e.target.value)}
+                          className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {broker === 'proft' && (
+                    <div>
+                      <label className="text-white/50 block mb-1">PROFT / Profit REST URL</label>
+                      <input
+                        type="text"
+                        placeholder="https://api.sua-mesa.com"
+                        value={proftBaseUrl}
+                        onChange={(e) => setProftBaseUrl(e.target.value)}
+                        className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {type === 'real' && (
                 <div className="space-y-3 pt-2 border-t border-white/10">
