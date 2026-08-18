@@ -11,27 +11,41 @@ import {
   WebhookConfig,
 } from '../types.js';
 
-async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  const contentType = res.headers.get('content-type') || '';
+async function requestJson<T>(url: string, options?: RequestInit, retries = 1): Promise<T> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
 
-  if (!res.ok || !contentType.includes('application/json')) {
-    const text = await res.text();
-    let errorMessage = `Erro na requisição ${url} (status ${res.status})`;
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed.error) errorMessage = parsed.error;
-    } catch {
-      if (text.trim().startsWith('<')) {
-        errorMessage = `A API ${url} retornou HTML em vez de JSON (status ${res.status}).`;
-      } else if (text) {
-        errorMessage = text;
+    if (!res.ok || !contentType.includes('application/json')) {
+      const text = await res.text();
+      let errorMessage = `Erro na requisição ${url} (status ${res.status})`;
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error) errorMessage = parsed.error;
+      } catch {
+        if (text.trim().startsWith('<')) {
+          errorMessage = `A API ${url} retornou resposta HTML (status ${res.status}).`;
+        } else if (text) {
+          errorMessage = text;
+        }
       }
+      throw new Error(errorMessage);
     }
-    throw new Error(errorMessage);
-  }
 
-  return res.json();
+    return await res.json();
+  } catch (err: any) {
+    // If it's a transient network glitch or dev server cold restart, retry once for GET requests
+    const isGet = !options?.method || options.method.toUpperCase() === 'GET';
+    if (retries > 0 && isGet && (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError')) {
+      await new Promise((r) => setTimeout(r, 400));
+      return requestJson<T>(url, options, retries - 1);
+    }
+
+    if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+      throw new Error(`Servidor temporariamente indisponível (${url}).`);
+    }
+    throw err;
+  }
 }
 
 export async function fetchTickers(): Promise<Record<string, Ticker>> {

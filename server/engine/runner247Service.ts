@@ -47,11 +47,11 @@ export class Runner247Service {
       this.heartbeat();
     }, 2500);
 
-    // Continuous Firebase Firestore auto-sync loop every 8 seconds
+    // Continuous Firebase Firestore auto-sync loop every 60 seconds (quota-friendly)
     this.firebaseSyncTimer = setInterval(() => {
       if (this.status !== 'running') return;
       this.syncWithFirebase();
-    }, 8000);
+    }, 60000);
 
     store.addLog('INFO', '⚡ Motor 24/7 Runner e sincronizador Firebase ativados com sucesso.');
   }

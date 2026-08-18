@@ -202,10 +202,17 @@ export class BotRegistryService {
     }
 
     // 1. Enforce TradeScheduler timeframe & exchange regulations
+    const exchangeMap: Record<string, string> = {
+      binance: 'BINANCE',
+      bydfi: 'CRYPTO',
+      b3: 'B3',
+      alpaca: 'NASDAQ',
+      mt5: 'B3',
+    };
     const schedulerCheck = defaultTradeScheduler.canTrade({
       symbol: bot.config.symbol,
       timeframe: bot.config.timeframe,
-      exchange: account.broker === 'binance' ? 'B3' : 'NASDAQ',
+      exchange: exchangeMap[account.broker.toLowerCase()] || 'BINANCE',
     });
 
     if (!schedulerCheck.allowed) {

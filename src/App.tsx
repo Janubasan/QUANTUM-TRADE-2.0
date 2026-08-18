@@ -73,6 +73,9 @@ export default function App() {
           console.error('SSE parse error:', e);
         }
       };
+      eventSource.onerror = () => {
+        // EventSource will automatically attempt to reconnect; polling provides seamless fallback
+      };
     } catch (e) {
       console.warn('SSE fallback to polling:', e);
     }

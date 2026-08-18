@@ -59,12 +59,12 @@ export function Navbar({
         {/* Brand & Logo - Bento Style */}
         <div className="flex items-center gap-4">
           <div className="bg-cyan-500 w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.5)] shrink-0">
-            <span className="text-black font-black text-xl">Q</span>
+            <span className="text-black font-black text-xl">J</span>
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tighter text-white">
-                QUANTUM TRADE
+                JANUTRADE
               </h1>
               <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
                 PRO V4

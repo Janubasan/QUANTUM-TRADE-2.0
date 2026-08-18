@@ -1,123 +1,179 @@
-# Quantum Trade Engine & Cryptographic Audit System
+# ⚡ JANUTRADE - Multi-Broker & Quantum Autonomous Trading Platform
 
-> **Programa desenvolvido por Januario Leal**
-
-Uma plataforma avançada de **Trading Autônomo, Validação Criptográfica e Regulação de Mercado**, projetada para operar em alta frequência com modos de execução **Scalp (Sub-minuto)** e **Normal**, garantindo **Zero Dados Falsos** via verificação RAG, assinaturas digitais HMAC/SHA-256 e uma cadeia imutável de auditoria em blocos.
+> **Desenvolvido por Januario Leal**
+> 
+> Plataforma de alta performance para **Trading Autônomo, Validação Criptográfica RAG, Inteligência Coletiva e Execução 24/7 Multi-Broker** com sincronização em nuvem via Firebase Firestore e gestão de risco calibrada.
 
 ---
 
-## 🌟 Principais Recursos e Módulos
+## 🌟 Visão Geral do JANUTRADE
 
-### 1. ⚡ Regulador de Mercado (`TradeScheduler`) & Modo Scalp
+O **JANUTRADE** é um ecossistema completo de negociação automatizada que integra brokers centralizados, descentralizados e tradicionais (B3, Binance, BYDFi, Alpaca, MetaTrader 5) com um motor de validação criptográfica à prova de fraudes (**Zero Dados Falsos**).
+
+Projetado para operar de forma contínua com modos de execução **Scalp (Sub-minuto)** e **Normal**, o JANUTRADE possui um **Runner 24/7** com persistência em tempo real, proteção contra slippage, verificação de limites operacionais e inteligência coletiva quântica.
+
+---
+
+## 🚀 Principais Módulos e Recursos
+
+### 1. 🤖 Multi-Bot Execution Engine & Runner 24/7
+- **Operação Ininterrupta (Runner 24/7)**: Loop de avaliação de mercado contínuo em background sincronizado com Firebase Firestore.
+- **Diversidade de Estratégias**:
+  - *M1 Scalp SuperTrend*: Operações rápidas sub-minuto baseadas em momentum.
+  - *Quantum Breakout BRL*: Identificação de rompimentos de volatilidade em pares BRL e USDT.
+  - *BTC Momentum Wave*: Rastreador de tendência adaptativo para ativos de alta liquidez.
+  - *Grid Dinâmico e Reversão à Média*.
+- **Gestão de Risco Calibrada**:
+  - Regra de alocação máxima por operação (0.5% a 2%).
+  - Cálculo automático de *Take Profit (TP)* e *Stop Loss (SL)* com relação risco/retorno ajustada.
+  - **Kill Switch Global e Operacional**: Pausa imediata de todas as ordens e bots sob condições anormais de mercado.
+
+### 2. ⚡ Regulador de Mercado (`TradeScheduler`) & Modo Scalp
 - **Modos de Operação Dinâmicos**:
-  - **Modo `scalp`**: Exclusivo para operações rápidas em timeframes sub-minuto (`5s`, `10s`, `15s`, `30s`).
-  - **Modo `normal`**: Destinado a estratégias de intraday/swing (`1m`, `5m`, `10m`, `15m`, `30m`, `1h`).
-- **Bloqueio Automático de Timeframes**: Sinais que chegam com timeframes fora do modo ativo são rejeitados e registrados instantaneamente na auditoria.
+  - **Modo `scalp`**: Exclusivo para operações ultra-rápidas em timeframes sub-minuto (`5s`, `10s`, `15s`, `30s`).
+  - **Modo `normal`**: Destinado a estratégias de intraday e swing trading (`1m`, `5m`, `15m`, `1h`, `1d`).
+- **Bloqueio Automático de Timeframes**: Rejeição e auditoria instantânea de sinais fora do modo configurado.
 - **Proteção de Rate Limit por Bolsa (Market Rules)**:
   - **B3 (Brasil)**: Limite de 1 ord/seg, 30 ord/min e intervalo mínimo de 1.0s.
-  - **NYSE / NASDAQ (US Equities & Futures)**: Limite de 2 ord/seg, 50 ord/min e intervalo de 0.5s.
+  - **NYSE / NASDAQ / CME (US Equities & Futures)**: Limite de 2 ord/seg, 50 ord/min e intervalo de 0.5s.
+  - **Crypto (Binance, BYDFi)**: Limite calibrado de 5 ord/seg com tratamento de rate limit via WebSocket/REST.
 
-### 2. 🛡️ Autenticação Criptográfica & Trilha de Auditoria Imutável
-- **Assinatura Digital de Sinais**: Todos os cotações de provedores (Yahoo Finance, TradingView, CME) são assinados criptograficamente.
-- **Cadeia de Hashes (Blockchain Audit Trail)**: Cada entrada é vinculada ao hash do bloco anterior (`prev_hash`), impedindo qualquer adulteração retroativa dos logs de negociação.
+### 3. 🛡️ Autenticação Criptográfica & Trilha de Auditoria Imutável (RAG Gate)
+- **Assinatura Digital de Sinais**: Cotações e ordens recebidas são assinadas digitalmente via HMAC/SHA-256.
+- **Cadeia de Blocos de Auditoria (Blockchain Audit Trail)**: Cada evento de trade é encadeado ao hash do bloco anterior (`prev_hash`), garantindo imutabilidade e rastreabilidade total.
 - **DataVerifier & Gate RAG**:
-  - Validação de plausibilidade de preços (limites de volatilidade e desvio do ativo).
-  - Tolerância rigorosa a *timestamp drift* (máximo 300s).
-  - Filtro contra injeções malicious ou *hash mismatch*.
+  - Plausibilidade de preços (checagem de bandas de volatilidade e desvio padrão do ativo).
+  - Tolerância a *timestamp drift* (máximo 300s).
+  - Proteção contra injeções de dados maliciosos ou adulteração de payloads.
 
-### 3. 🤖 Bots Autônomos & Gestão Multi-Broker
-- Execução distribuída de estratégias autônomas em tempo real.
-- Gestão centralizada de contas e saldos em Múltiplos Brokers.
-- Monitoramento contínuo de KPIs: Profit/Loss, Win Rate, Drawdown Máximo e Sharpe Ratio.
+### 4. 🧠 Inteligência Coletiva & Entanglement Quântico
+- **Score Coletivo Ponderado**: Matriz de correlação e consenso entre múltiplos bots e indicadores para autorizar sinais de alta probabilidade.
+- **Backtesting Coletivo**: Simulação com dados históricos reais e estresse de slippage/taxas para avaliar a resiliência das estratégias.
 
-### 4. 📊 Interface Visual Interativa e Relatórios
-- Painel para alternar entre os modos **SCALP** e **NORMAL**.
-- Visualização ao vivo da **Cadeia de Hashes de Auditoria**.
-- Gerador autônomo de **Relatório de Auditoria em Markdown**.
+### 5. 💼 Gestão Multi-Broker & Contas Demo/Real
+- Suporte simultâneo a múltiplas contas (Demo para testes de estratégias e Real para alocação efetiva de capital).
+- Monitoramento contínuo de PnL (Lucro/Prejuízo), Win Rate, Drawdown Máximo e Sharpe Ratio.
+- Conversão e liquidação multi-moedas (BRL, USD, USDT).
 
 ---
 
-## 🏗️ Arquitetura do Sistema
+## 🏗️ Arquitetura do Projeto
 
 ```
+janutrade/
 ├── server/
+│   ├── adapters/
+│   │   └── brokerAdapters.ts        # Abstração de corretoras (Binance, BYDFi, B3, Alpaca, MT5)
+│   ├── engine/
+│   │   ├── botWorker.ts             # Loop de execução de estratégias autônomas
+│   │   ├── profitRule.ts            # Motor de gerenciamento de risco e dimensionamento
+│   │   └── runner247Service.ts      # Serviço do Runner 24/7 com heartbeat e Firestore sync
 │   ├── regulator/
-│   │   ├── marketRules.ts        # Definição de limites por bolsa e timeframes (Scalp/Normal)
-│   │   └── tradeScheduler.ts     # Controlador de concorrência e validação temporal
+│   │   ├── marketRules.ts           # Regras de limite de ordens por bolsa
+│   │   └── tradeScheduler.ts        # Controle de concorrência e modos Scalp / Normal
+│   ├── services/
+│   │   ├── botRegistry.ts           # Registro dinâmico e ciclo de vida dos bots
+│   │   ├── collective.ts            # Inteligência coletiva e cálculo de consenso quântico
+│   │   ├── firebaseService.ts       # Sincronização em nuvem com Firestore
+│   │   ├── killSwitchService.ts     # Proteção de emergência e interrupção de operações
+│   │   ├── operationalGuard.ts      # Guardião operacional de margem e volatilidade
+│   │   ├── priceAggregator.ts       # Agregador de cotações em tempo real (Yahoo Finance / APIs)
+│   │   └── webhookEngine.ts         # Ingestão de sinais externos (TradingView, webhooks)
 │   ├── validation/
-│   │   ├── signer.ts             # Assinatura HMAC SHA-256 de payloads de sinais
-│   │   ├── verifier.ts           # Motor DataVerifier (Signature, Hash, Timestamp, RAG Bounds)
-│   │   └── logger.ts             # Encadear imutável de blocos de auditoria
+│   │   ├── signer.ts                # Assinaturas digitais HMAC SHA-256
+│   │   ├── verifier.ts              # DataVerifier e validação de bounds RAG
+│   │   └── logger.ts                # Cadeia imutável de blocos de auditoria
 │   └── tester/
-│       ├── demoRunner.ts         # Ingestão de feeds e execução de vetores de teste
-│       └── reportGenerator.ts    # Compilação de relatórios Markdown de auditoria
+│       ├── demoRunner.ts            # Ingestão de testes e estresse de mercado
+│       └── reportGenerator.ts       # Gerador de relatórios de conformidade em Markdown
 ├── src/
 │   ├── components/
-│   │   ├── AuditValidationView.tsx # Painel de Validação, RAG, Hashes e TradeScheduler
-│   │   ├── DashboardView.tsx       # Métrica quântica e PnL ao vivo
-│   │   ├── BotsView.tsx            # Gestão de Bots Autônomos
-│   │   ├── AccountsView.tsx        # Contas Multi-Broker
-│   │   └── WebhookView.tsx         # Recebimento de Webhooks e sinais externos
-│   ├── services/
-│   │   └── api.ts                  # Cliente REST para comunicação com o backend Node/Express
-│   └── App.tsx
-├── server.ts                       # Servidor Express com API REST + Vite Middleware
-└── README.md
+│   │   ├── DashboardView.tsx        # Painel central de operações e PnL ao vivo
+│   │   ├── AccountsView.tsx         # Gestão de contas Multi-Broker
+│   │   ├── BotsView.tsx             # Configuração e monitoramento de Bots
+│   │   ├── AuditValidationView.tsx  # Validação RAG, Cadeia de Hashes e TradeScheduler
+│   │   ├── EntanglementView.tsx     # Painel de inteligência coletiva e consenso
+│   │   ├── BacktestingView.tsx      # Simulador de estratégias históricas
+│   │   ├── WebhookView.tsx          # Gestão de Webhooks e payloads assinados
+│   │   ├── TradeHistoryView.tsx     # Histórico detalhado e logs de auditoria
+│   │   ├── Navbar.tsx               # Barra de navegação e status global do portfólio
+│   │   └── TickerBar.tsx            # Ticker de cotações em tempo real
+│   ├── firebase.ts                  # Inicialização cliente do Firebase Firestore
+│   └── App.tsx                      # Componente raiz da aplicação
+├── firestore.rules                  # Regras de segurança do Cloud Firestore
+├── firebase-blueprint.json          # Blueprint e esquemas de dados da plataforma
+├── server.ts                        # Servidor Express API + SSR/Vite
+└── README.md                        # Documentação oficial do JANUTRADE
 ```
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+## 🛠️ Stack Tecnológica
 
-- **Linguagem & Runtime**: TypeScript, Node.js (ES Modules / CommonJS bundling via esbuild).
-- **Backend Framework**: Express.js.
-- **Frontend UI**: React 18, Vite, Tailwind CSS, Lucide React icons, Motion.
-- **Criptografia & Segurança**: Crypto (SHA-256 / HMAC / Digesting).
-
----
-
-## 🚀 Como Executar o Projeto
-
-### Pré-requisitos
-- **Node.js** v18+ e **npm** instalados.
-
-### Passos para Instalação e Execução
-
-1. **Instalar as dependências**:
-   ```bash
-   npm install
-   ```
-
-2. **Iniciar o Ambiente de Desenvolvimento**:
-   ```bash
-   npm run dev
-   ```
-   O servidor estará acessível em `http://localhost:3000`.
-
-3. **Compilação e Build para Produção**:
-   ```bash
-   npm run build
-   npm start
-   ```
+| Camada | Tecnologias |
+| :--- | :--- |
+| **Backend & Servidor** | Node.js, Express.js, TypeScript, TSX, esbuild |
+| **Frontend & UI** | React 18, Vite, Tailwind CSS, Lucide React, Motion, Recharts |
+| **Persistência & Nuvem** | Firebase Cloud Firestore, Sincronização em Tempo Real (SSE + REST) |
+| **Criptografia & Auditoria** | Web Crypto / Node Crypto (HMAC, SHA-256, Digesting de Blocos) |
+| **Feeds de Mercado** | Yahoo Finance API, WebSockets e Webhooks TradingView |
 
 ---
 
-## 📡 Referência de Endpoints Principais
+## 🚀 Como Executar o JANUTRADE
 
-### Regulador de Mercado
-- `GET /api/regulator/scheduler`: Retorna o modo ativo (`scalp` ou `normal`), timeframes permitidos e regras das bolsas.
-- `POST /api/regulator/scheduler/mode`: Altera o modo de operação entre `scalp` e `normal`.
-  ```json
-  { "mode": "scalp" }
-  ```
+### 1. Pré-requisitos
+- **Node.js** (v18 ou superior)
+- **npm** ou **bun**
 
-### Auditoria & Criptografia
-- `GET /api/audit/chain`: Consulta o estado completo da cadeia de hashes imutável.
-- `GET /api/audit/report`: Retorna o relatório de auditoria formatado em Markdown.
-- `POST /api/audit/run-demo`: Executa um ciclo completo de ingestão, validação RAG, testes de invasão e relatórios.
+### 2. Instalação e Execução
+
+```bash
+# 1. Instalar as dependências
+npm install
+
+# 2. Iniciar em modo de desenvolvimento (Porta 3000)
+npm run dev
+
+# 3. Compilar para produção
+npm run build
+
+# 4. Iniciar o servidor compilado
+npm start
+```
+
+A interface web estará disponível em `http://localhost:3000`.
+
+---
+
+## 📡 Principais Endpoints da API REST
+
+### 📊 Mercado & Contas
+- `GET /api/accounts`: Lista todas as contas (Demo e Real) e respectivos saldos.
+- `POST /api/accounts`: Cria uma nova conta de trading.
+- `GET /api/tickers`: Cotações agregadas em tempo real dos pares de ativos.
+- `GET /api/trades`: Histórico e posições abertas.
+
+### 🤖 Bots & Automação
+- `GET /api/bots`: Lista de bots autônomos e status de execução.
+- `POST /api/bots`: Criação ou inicialização de novo bot.
+- `POST /api/bots/:id/toggle`: Alterna o estado do bot (`running` / `paused`).
+
+### ⚡ Runner 24/7 & Proteção
+- `GET /api/runner-247/status`: Status do Runner 24/7 (uptime, ticks, sincronização Firestore).
+- `POST /api/runner-247/toggle`: Inicia ou pausa o Runner 24/7.
+- `GET /api/kill-switch`: Status dos Kill Switches operacionais.
+- `POST /api/kill-switch/toggle`: Ativa ou desativa a trava global de emergência.
+
+### 🛡️ Auditoria Criptográfica & Scheduler
+- `GET /api/audit/chain`: Consulta a cadeia completa de blocos criptográficos imutáveis.
+- `GET /api/audit/report`: Gera o relatório completo de conformidade e integridade em Markdown.
+- `GET /api/regulator/scheduler`: Retorna o modo ativo (`scalp` / `normal`) e regras das bolsas.
+- `POST /api/regulator/scheduler/mode`: Alterna o modo de execução entre `scalp` e `normal`.
 
 ---
 
 ## 📄 Créditos e Autoria
 
-Este sistema foi concebido, arquitetado e desenvolvido por **Januario Leal**. Todos os direitos reservados.
+Plataforma **JANUTRADE** concebida, arquitetada e desenvolvida por **Januario Leal**.
+Todos os direitos reservados.

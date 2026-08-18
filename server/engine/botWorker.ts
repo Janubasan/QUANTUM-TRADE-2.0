@@ -161,21 +161,21 @@ export class BotWorker {
         }
       });
 
-      // 4. Trigger new trades if under maximum open position limit (up to 3 concurrent trades)
+      // 4. Trigger new trades if under maximum open position limit (up to 5 concurrent trades per bot)
       const remainingOpenCount = state.trades.filter((t) => t.botId === bot.id && t.status === 'open').length;
 
-      if (remainingOpenCount < 3 && Math.random() < 0.65) {
-        // A. Order Frequency Check (max 10 orders/hour)
+      if (remainingOpenCount < 5 && Math.random() < 0.80) {
+        // A. Order Frequency Check (max 60 orders/hour)
         const freqCheck = realisticExecutionService.checkOrderFrequency(account.id, account.broker);
         if (!freqCheck.allowed) {
-          bot.lastLog = `⚠️ Frequência bloqueada: Limite de 10 ordens por hora atingido (${freqCheck.currentCount}/${freqCheck.maxOrders}).`;
+          bot.lastLog = `⚠️ Frequência controlada: Limite de ordens atingido (${freqCheck.currentCount}/${freqCheck.maxOrders}).`;
           continue;
         }
 
-        // B. Daily Profit Cap Check (max 5% daily growth cap)
+        // B. Daily Profit Cap Check (max 20% daily growth cap)
         const dailyCheck = realisticExecutionService.checkDailyProfit(account.id, account.initialBalance);
         if (!dailyCheck.allowed) {
-          bot.lastLog = `⚠️ Trava de Lucro Diário: Limite de +5% atingido no dia (+R$ ${dailyCheck.totalPnlToday.toFixed(2)} / máx R$ ${dailyCheck.maxProfit.toFixed(2)}).`;
+          bot.lastLog = `⚠️ Trava de Lucro Diário: Meta de +20% atingida no dia (+R$ ${dailyCheck.totalPnlToday.toFixed(2)} / máx R$ ${dailyCheck.maxProfit.toFixed(2)}).`;
           continue;
         }
 

@@ -46,6 +46,11 @@ export function BotsView({ bots, accounts, logs, onRefreshData }: BotsViewProps)
     kronos_grid: { name: 'Kronos Volatility Grid', desc: 'Grade dinâmica de ordens configurável com base em bandas de volatilidade' },
     quantum_entanglement: { name: 'Quantum Entanglement Arbitrage', desc: 'Arbitragem de divergência de correlação quântica entre pares (BTC/ETH/SOL)' },
     macd_cross: { name: 'MACD Trend Follower', desc: 'Seguidor de tendência por cruzamento de histograma MACD' },
+    kronos_scalp: { name: 'Kronos Fast Scalper', desc: 'Scalping ultra-rápido de sub-minutos para micro-tendências' },
+    momentum: { name: 'Quantum Momentum Breakout', desc: 'Captura rompimentos acelerados por volume e inclinação de médias' },
+    grid: { name: 'Adaptive Grid Trading', desc: 'Compra em suportes da grade e venda em resistências de volatilidade' },
+    dca: { name: 'Smart DCA Accumulator', desc: 'Acumulação inteligente fracionada em zonas de retração' },
+    mean_reversion: { name: 'Quantum Mean Reversion', desc: 'Explora retornos à média do VWAP com filtros de exaustão' },
   };
 
   const handleToggleAll = async (running: boolean) => {

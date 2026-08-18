@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import {
-  getFirestore,
   doc,
   getDoc,
   setDoc,
@@ -9,12 +8,9 @@ import {
   where,
   getDocs,
   serverTimestamp,
-  Timestamp,
 } from 'firebase/firestore';
-import { getApps, initializeApp, getApp } from 'firebase/app';
-import { readFileSync } from 'fs';
-import path from 'path';
 import { store } from '../data/store.js';
+import { firebaseService } from './firebaseService.js';
 
 export interface OrderPayload {
   id?: string;
@@ -39,34 +35,22 @@ export interface ValidationResult {
 }
 
 export class OperationalGuard {
-  public readonly MAX_ORDERS_PER_HOUR = 10;
-  public readonly DAILY_PROFIT_LIMIT_PERCENT = 5.0;
+  public readonly MAX_ORDERS_PER_HOUR = 60;
+  public readonly DAILY_PROFIT_LIMIT_PERCENT = 20.0;
   public readonly SLIPPAGE_RATE = 0.0005; // 0,05%
   public readonly FEE_RATE = 0.001; // 0,1%
-  public readonly TIME_MIN_SECONDS = 60; // 1 min
+  public readonly TIME_MIN_SECONDS = 5; // 5s para suportar scalpers sub-minuto
   public readonly TIME_MAX_SECONDS = 24 * 3600; // 24 hours
 
-  private db: any = null;
   private localKillSwitch: boolean = false; // false = trading allowed (kill switch disengaged)
   private lastKillSwitchFetch: number = 0;
 
   constructor() {
-    this.initDb();
+    this.syncKillSwitchFromDb();
   }
 
-  private initDb() {
-    try {
-      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-      const raw = readFileSync(configPath, 'utf-8');
-      const config = JSON.parse(raw);
-      const app = getApps().length === 0 ? initializeApp(config) : getApp();
-      this.db = getFirestore(app, config.firestoreDatabaseId || undefined);
-      console.log('🛡️ [OperationalGuard] Inicializado com Firestore ativo.');
-      // Initialize global config if needed
-      this.syncKillSwitchFromDb();
-    } catch (e: any) {
-      console.warn('⚠️ [OperationalGuard] Firestore em modo local/fallback:', e.message);
-    }
+  private get db(): any {
+    return firebaseService.isReady() ? firebaseService.getDb() : null;
   }
 
   // ------------------------------------------------------------------
@@ -75,7 +59,7 @@ export class OperationalGuard {
   public async getKillSwitch(): Promise<boolean> {
     const now = Date.now();
     // Cache for 2 seconds to avoid excessive network roundtrips on high frequency ticks
-    if (this.db && now - this.lastKillSwitchFetch > 2000) {
+    if (this.db && !firebaseService.isQuotaLimited() && now - this.lastKillSwitchFetch > 2000) {
       try {
         const docRef = doc(this.db, 'config', 'global');
         const snap = await getDoc(docRef);
@@ -85,7 +69,9 @@ export class OperationalGuard {
         }
         this.lastKillSwitchFetch = now;
       } catch (e: any) {
-        // Fallback to local memory state
+        if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+          firebaseService.markQuotaExhausted();
+        }
       }
     }
     return this.localKillSwitch;
@@ -94,7 +80,7 @@ export class OperationalGuard {
   public async setKillSwitch(active: boolean): Promise<boolean> {
     this.localKillSwitch = active;
     this.lastKillSwitchFetch = Date.now();
-    if (this.db) {
+    if (this.db && !firebaseService.isQuotaLimited()) {
       try {
         const docRef = doc(this.db, 'config', 'global');
         await setDoc(
@@ -106,7 +92,9 @@ export class OperationalGuard {
           { merge: true }
         );
       } catch (e: any) {
-        console.error('Erro ao atualizar kill_switch no Firestore:', e.message);
+        if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+          firebaseService.markQuotaExhausted();
+        }
       }
     }
     store.addLog(
@@ -122,7 +110,7 @@ export class OperationalGuard {
   }
 
   public async syncKillSwitchFromDb() {
-    if (!this.db) return;
+    if (!this.db || firebaseService.isQuotaLimited()) return;
     try {
       const docRef = doc(this.db, 'config', 'global');
       const snap = await getDoc(docRef);
@@ -131,12 +119,11 @@ export class OperationalGuard {
         if (typeof data.kill_switch === 'boolean') {
           this.localKillSwitch = data.kill_switch;
         }
-      } else {
-        // Create initial config if not existing
-        await setDoc(docRef, { kill_switch: false, updatedAt: new Date().toISOString() });
       }
-    } catch (e) {
-      // Non-blocking
+    } catch (e: any) {
+      if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+        firebaseService.markQuotaExhausted();
+      }
     }
   }
 
@@ -358,7 +345,7 @@ export class OperationalGuard {
     processedOrder.validated_at = new Date().toISOString();
     processedOrder.created_at = processedOrder.created_at || new Date().toISOString();
 
-    if (this.db) {
+    if (this.db && !firebaseService.isQuotaLimited()) {
       try {
         const docRef = doc(this.db, 'orders', orderId);
         await setDoc(docRef, {
@@ -366,7 +353,9 @@ export class OperationalGuard {
           updatedAt: serverTimestamp(),
         });
       } catch (e: any) {
-        console.error('Erro ao persistir ordem aprovada no Firestore:', e.message);
+        if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+          firebaseService.markQuotaExhausted();
+        }
       }
     }
 

@@ -48,6 +48,8 @@ export function DashboardView({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
 
+  const [activeTradesFilter, setActiveTradesFilter] = useState<'account' | 'all'>('all');
+
   const ticker = tickers[selectedSymbol] || tickers['BTC/BRL'];
 
   // Calculate profit rule values
@@ -58,8 +60,10 @@ export function DashboardView({
   const isFirstTrade = account.totalTrades === 0;
   const isProfitRuleAllowed = isFirstTrade || profit >= riskAmount;
 
-  // Active trades for this account
-  const activeTrades = trades.filter((t) => t.accountId === account.id && t.status === 'open');
+  // Active trades for this account or all accounts
+  const activeTrades = activeTradesFilter === 'account'
+    ? trades.filter((t) => t.accountId === account.id && t.status === 'open')
+    : trades.filter((t) => t.status === 'open');
 
   // Chart mockup candles simulation based on real price
   const generateChartData = () => {
@@ -438,16 +442,41 @@ export function DashboardView({
 
       {/* Active Trades Table */}
       <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 shadow-2xl">
-        <div className="flex items-center justify-between pb-4 border-b border-white/5">
-          <h3 className="font-bold text-white text-base flex items-center gap-2">
-            Posições Abertas ({activeTrades.length})
-          </h3>
-          <span className="text-xs text-white/40">Monitoradas em Tempo Real</span>
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <h3 className="font-bold text-white text-base flex items-center gap-2">
+              Posições Abertas ({activeTrades.length})
+            </h3>
+            <span className="text-xs text-white/40">Monitoradas em Tempo Real</span>
+          </div>
+
+          <div className="flex items-center gap-2 bg-black/40 p-1 rounded-xl border border-white/5 text-xs font-mono">
+            <button
+              onClick={() => setActiveTradesFilter('all')}
+              className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                activeTradesFilter === 'all'
+                  ? 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                  : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Todas ({trades.filter((t) => t.status === 'open').length})
+            </button>
+            <button
+              onClick={() => setActiveTradesFilter('account')}
+              className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                activeTradesFilter === 'account'
+                  ? 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                  : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Desta Conta ({trades.filter((t) => t.accountId === account.id && t.status === 'open').length})
+            </button>
+          </div>
         </div>
 
         {activeTrades.length === 0 ? (
           <div className="py-8 text-center text-xs text-white/40 font-mono">
-            Nenhuma posição aberta nesta conta no momento.
+            Nenhuma posição aberta no momento. Os robôs ativos estão avaliando o mercado.
           </div>
         ) : (
           <div className="overflow-x-auto mt-3">
@@ -469,6 +498,8 @@ export function DashboardView({
                 {activeTrades.map((t) => {
                   const isLong = t.direction === 'LONG';
                   const isProfit = t.pnl >= 0;
+                  const isBrl = t.symbol.includes('BRL');
+                  const currSym = isBrl ? 'R$' : '$';
 
                   return (
                     <tr key={t.id} className="hover:bg-white/5 transition">
@@ -484,13 +515,13 @@ export function DashboardView({
                           {t.direction}
                         </span>
                       </td>
-                      <td className="py-3.5 text-white/70">R$ {t.entryPrice.toFixed(2)}</td>
-                      <td className="py-3.5 text-cyan-300 font-bold">R$ {t.currentPrice.toFixed(2)}</td>
-                      <td className="py-3.5 text-emerald-400">R$ {t.tpPrice.toFixed(2)}</td>
-                      <td className="py-3.5 text-rose-400">R$ {t.slPrice.toFixed(2)}</td>
+                      <td className="py-3.5 text-white/70">{currSym} {t.entryPrice.toFixed(2)}</td>
+                      <td className="py-3.5 text-cyan-300 font-bold">{currSym} {t.currentPrice.toFixed(2)}</td>
+                      <td className="py-3.5 text-emerald-400">{currSym} {t.tpPrice.toFixed(2)}</td>
+                      <td className="py-3.5 text-rose-400">{currSym} {t.slPrice.toFixed(2)}</td>
                       <td className={`py-3.5 font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {isProfit ? '+' : ''}
-                        {t.pnlPercent.toFixed(2)}% (R$ {t.pnl.toFixed(2)})
+                        {t.pnlPercent.toFixed(2)}% ({currSym} {t.pnl.toFixed(2)})
                       </td>
                       <td className="py-3.5 text-white/50">{t.botName || 'Manual'}</td>
                       <td className="py-3.5 text-right">

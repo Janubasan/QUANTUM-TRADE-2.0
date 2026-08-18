@@ -218,7 +218,7 @@ export function Runner247FirebaseCard({ onRefresh }: Runner247FirebaseCardProps)
           <div className="text-[10px] text-white/50">
             {metrics?.lastFirebaseSync
               ? `Último: ${new Date(metrics.lastFirebaseSync).toLocaleTimeString()}`
-              : 'Auto-sync a cada 8s'}
+              : 'Auto-sync ativo'}
           </div>
         </div>
 
@@ -240,11 +240,21 @@ export function Runner247FirebaseCard({ onRefresh }: Runner247FirebaseCardProps)
           <div className="text-white/40 flex items-center gap-1.5 text-[11px]">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Status Nuvem
           </div>
-          <div className="text-emerald-400 font-bold text-xs truncate" title={firebaseStatus?.projectId}>
-            {firebaseStatus ? '🟢 Firestore OK' : '🟢 Sincronizado'}
+          <div
+            className={`font-bold text-xs truncate ${firebaseStatus?.quotaExhausted ? 'text-amber-300' : 'text-emerald-400'}`}
+            title={firebaseStatus?.projectId}
+          >
+            {firebaseStatus?.quotaExhausted
+              ? '🛡️ Modo Local Seguro'
+              : firebaseStatus?.initialized
+              ? '🟢 Firestore OK'
+              : '🟢 Sincronizado'}
           </div>
-          <div className="text-[10px] text-white/50 truncate" title={firebaseStatus?.projectId}>
-            {firebaseStatus?.projectId || 'gen-lang-client...'}
+          <div
+            className="text-[10px] text-white/50 truncate"
+            title={firebaseStatus?.quotaExhausted ? 'Proteção de Quota Free Tier Ativa' : firebaseStatus?.projectId}
+          >
+            {firebaseStatus?.quotaExhausted ? 'Quota Guard Ativo' : firebaseStatus?.projectId || 'ai-studio...'}
           </div>
         </div>
       </div>

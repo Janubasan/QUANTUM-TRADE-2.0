@@ -1,6 +1,6 @@
 # Guia de Criação e Integração de Novos Bots de Trading
 
-Este documento define a arquitetura, as interfaces e o passo a passo completo para criar e integrar novos bots autônomos de trading na plataforma **Stockraft Quantum Trade**.
+Este documento define a arquitetura, as interfaces e o passo a passo completo para criar e integrar novos bots autônomos de trading na plataforma **JANUTRADE**.
 
 ---
 

@@ -52,7 +52,12 @@ export type StrategyId =
   | 'macd_cross'
   | 'quant_orb_15m'
   | 'orb_agentic_enhanced'
-  | 'multi_agent_regime_desk';
+  | 'multi_agent_regime_desk'
+  | 'kronos_scalp'
+  | 'momentum'
+  | 'grid'
+  | 'dca'
+  | 'mean_reversion';
 
 export interface BotConfig {
   symbol: string;

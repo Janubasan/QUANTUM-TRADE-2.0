@@ -1,8 +1,8 @@
 import { store } from '../data/store.js';
 
 export class RealisticExecutionService {
-  private dailyProfitLimitPct = 0.05; // Máximo 5% de lucro sobre o capital por dia
-  private maxOrdersPerHour = 30; // Limite saudável de ordens por hora
+  private dailyProfitLimitPct = 0.20; // Limite saudável de 20% de crescimento por dia
+  private maxOrdersPerHour = 60; // Limite flexível e seguro de ordens por hora
   private orderCounts: Map<string, { count: number; resetTime: number }> = new Map();
 
   public resetCounts() {
