@@ -177,3 +177,9 @@ A interface web estará disponível em `http://localhost:3000`.
 
 Plataforma **JANUTRADE** concebida, arquitetada e desenvolvida por **Januario Leal**.
 Todos os direitos reservados.
+
+---
+
+## 🔐 Integrações reais (roadmap)
+
+O projeto contém simuladores de adapter; integrações com capital real exigem uma camada de execução, reconciliação e homologação adicional. Consulte o **[Roadmap de carteiras Web3 e corretoras](docs/ROADMAP_INTEGRACOES_REAIS.md)** antes de configurar credenciais ou ativar qualquer conta real.
