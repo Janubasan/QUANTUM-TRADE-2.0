@@ -34,8 +34,10 @@ export const EXCHANGE_RULES: Record<string, MarketRules> = {
   CRYPTO: CRYPTO_RULES,
 };
 
-// Allowed timeframes per trading mode
+// Allowed timeframes per trading mode - strictly 1m, 5m, 10m, 15m, 30m, 1h for audited automated execution
+export const AUDITED_TIMEFRAMES = ['1m', '5m', '10m', '15m', '30m', '1h'];
+
 export const ALLOWED_TIMEFRAMES: Record<'scalp' | 'normal', string[]> = {
-  scalp: ['5s', '10s', '15s', '30s', '1m', '3m', '5m', '15m'], // scalping & fast intraday
-  normal: ['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'], // standard intraday / swing
+  scalp: ['5s', '10s', '15s', '30s', '1m', '5m', '10m', '15m', '30m', '1h'], // Scalping (only when manually enabled via button)
+  normal: ['1m', '5m', '10m', '15m', '30m', '1h'], // Audited Automated Mode
 };

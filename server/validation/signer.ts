@@ -2,8 +2,8 @@ import crypto from 'crypto';
 
 export interface DataPayload {
   symbol: string;
-  close: number;
-  volume: number;
+  close?: number;
+  volume?: number;
   provider?: string;
   [key: string]: any;
 }

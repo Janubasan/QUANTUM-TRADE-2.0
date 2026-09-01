@@ -8,6 +8,9 @@ import { killSwitchService } from '../services/killSwitchService.js';
 import { timeGateService } from '../services/timeGateService.js';
 import { realisticExecutionService } from '../services/realisticExecutionService.js';
 import { operationalGuard } from '../services/operationalGuard.js';
+import { defaultTradeScheduler } from '../regulator/tradeScheduler.js';
+import { defaultAuditLogger } from '../validation/logger.js';
+import { AUDITED_TIMEFRAMES } from '../regulator/marketRules.js';
 
 export class BotWorker {
   private timer: NodeJS.Timeout | null = null;
@@ -99,6 +102,17 @@ export class BotWorker {
         trade.pnlPercent = Number(pnlPercent.toFixed(2));
         trade.pnl = Number((trade.quantity * priceDiff - exitExec.fee).toFixed(2));
 
+        // Enforce Minimum Duration Rule (TimeGate: minimum 1m / 60s in audited timeframes)
+        const entryTimeMs = new Date(trade.entryTime).getTime();
+        const elapsedMs = Date.now() - entryTimeMs;
+        const schedulerMode = defaultTradeScheduler.getMode();
+        const minDurationMs = schedulerMode === 'scalp' ? 10_000 : 60_000; // 1 minuto (60s) de piso
+
+        // Se ainda não completou a janela mínima da operação (1m), mantém a posição aberta e viva
+        if (elapsedMs < minDurationMs) {
+          return;
+        }
+
         // Check TP or SL hit (High probability algorithmic TP targeting)
         const hitTP = isLong ? ticker.price >= trade.tpPrice : ticker.price <= trade.tpPrice;
         const hitSL = isLong ? ticker.price <= trade.slPrice : ticker.price >= trade.slPrice;
@@ -107,6 +121,8 @@ export class BotWorker {
           trade.status = 'closed';
           trade.exitTime = new Date().toISOString();
           trade.closeTime = trade.exitTime;
+          trade.durationSeconds = Math.max(1, Math.round((Date.now() - entryTimeMs) / 1000));
+          trade.clockHour = `${new Date().getHours().toString().padStart(2, '0')}:00`;
 
           // Calculate final realistic PnL after slippage & fee
           const grossPnl = hitTP
@@ -116,7 +132,24 @@ export class BotWorker {
 
           trade.pnl = finalPnl;
 
-          // Update account balance
+          // Cryptographic Audit Seal Generation (mirror verification hash)
+          const auditResult = defaultAuditLogger.auditTradeClose({
+            id: trade.id,
+            symbol: trade.symbol,
+            direction: trade.direction,
+            entryPrice: trade.entryPrice,
+            exitPrice: effectiveExitPrice,
+            pnl: finalPnl,
+            timeframe: trade.timeframe || bot.config.timeframe,
+            botName: bot.name,
+            accountName: account.name,
+          });
+
+          trade.auditCode = auditResult.auditCode;
+          trade.auditHash = auditResult.auditHash;
+          trade.auditStatus = 'AUDITED_SEALED';
+
+          // Update account balance ONLY after trade is closed and cryptographically sealed
           account.currentBalance = Number((account.currentBalance + finalPnl).toFixed(2));
           account.pnlTotal = Number((account.pnlTotal + finalPnl).toFixed(2));
           if (finalPnl > 0) account.winningTrades += 1;
@@ -131,13 +164,13 @@ export class BotWorker {
           store.updateBot(bot);
 
           const resultMsg = hitTP
-            ? `🎯 Take Profit Atingido (+R$ ${finalPnl.toFixed(2)})`
-            : `🛑 Stop Loss Disparado (-R$ ${Math.abs(finalPnl).toFixed(2)})`;
+            ? `🎯 Take Profit Atingido (+$${finalPnl.toFixed(2)} USD)`
+            : `🛑 Stop Loss Disparado (-$${Math.abs(finalPnl).toFixed(2)} USD)`;
 
-          store.addTrade(trade);
+          store.updateTrade(trade);
           store.addLog(
             finalPnl > 0 ? 'TRADE' : 'RULE',
-            `Bot ${bot.name}: ${resultMsg} em ${trade.symbol} (${trade.direction} @ R$ ${effectiveExitPrice.toFixed(2)}).`
+            `Bot ${bot.name}: ${resultMsg} em ${trade.symbol} (${trade.direction} @ $${effectiveExitPrice.toFixed(2)}) [Audit: ${auditResult.auditCode}].`
           );
 
           // Register Experience in Collective DB
@@ -161,21 +194,44 @@ export class BotWorker {
         }
       });
 
-      // 4. Trigger new trades if under maximum open position limit (up to 5 concurrent trades per bot)
+      // 4. Trigger new trades if under maximum open position limit (up to 8 concurrent trades per bot)
       const remainingOpenCount = state.trades.filter((t) => t.botId === bot.id && t.status === 'open').length;
 
-      if (remainingOpenCount < 5 && Math.random() < 0.80) {
-        // A. Order Frequency Check (max 60 orders/hour)
+      if (remainingOpenCount < 8 && Math.random() < 0.90) {
+        // --- AUDITED TIMEFRAMES GATE (1m, 5m, 10m, 15m, 30m, 1h) & MANUAL SCALP CHECK ---
+        const botTimeframe = bot.config.timeframe || '15m';
+        const isAuditedTimeframe = AUDITED_TIMEFRAMES.includes(botTimeframe);
+        const schedulerMode = defaultTradeScheduler.getMode();
+
+        // If bot timeframe is sub-minute (scalp) and manual scalp mode is NOT ON, skip automatic execution
+        if (!isAuditedTimeframe && schedulerMode !== 'scalp') {
+          bot.lastLog = `⏸️ Modo Scalp Desligado (Ativação manual por botão). Operando apenas Timeframes Auditados: 1m, 5m, 10m, 15m, 30m, 1h.`;
+          continue;
+        }
+
+        // Check TradeScheduler exchange limits & cooldown
+        const scheduleCheck = defaultTradeScheduler.canTrade({
+          symbol: bot.config.symbol,
+          timeframe: botTimeframe,
+          exchange: account.broker === 'mercado_bitcoin' ? 'B3' : 'BINANCE',
+        });
+
+        if (!scheduleCheck.allowed) {
+          bot.lastLog = `⏳ TradeScheduler Cooldown: ${scheduleCheck.reason}`;
+          continue;
+        }
+
+        // A. Order Frequency Check (high throughput safe capacity)
         const freqCheck = realisticExecutionService.checkOrderFrequency(account.id, account.broker);
         if (!freqCheck.allowed) {
           bot.lastLog = `⚠️ Frequência controlada: Limite de ordens atingido (${freqCheck.currentCount}/${freqCheck.maxOrders}).`;
           continue;
         }
 
-        // B. Daily Profit Cap Check (max 20% daily growth cap)
+        // B. Daily Profit Cap Check
         const dailyCheck = realisticExecutionService.checkDailyProfit(account.id, account.initialBalance);
         if (!dailyCheck.allowed) {
-          bot.lastLog = `⚠️ Trava de Lucro Diário: Meta de +20% atingida no dia (+R$ ${dailyCheck.totalPnlToday.toFixed(2)} / máx R$ ${dailyCheck.maxProfit.toFixed(2)}).`;
+          bot.lastLog = `⚠️ Trava de Lucro Diário: Meta atingida no dia (+$${dailyCheck.totalPnlToday.toFixed(2)} USD).`;
           continue;
         }
 
@@ -216,8 +272,10 @@ export class BotWorker {
         const isQuantBot = bot.strategy === 'quant_orb_15m';
         const isOrbEnhanced = bot.strategy === 'orb_agentic_enhanced';
         const isRegimeDesk = bot.strategy === 'multi_agent_regime_desk';
+        const isLumibot = bot.strategy === 'lumibot_killer_momentum_rsi';
+        const isLumibotSignal = bot.strategy === 'lumibot_signal_strategy';
 
-        const riskMult = (isQuantBot || isOrbEnhanced) ? 0.004 : 0.0035;
+        const riskMult = (isQuantBot || isOrbEnhanced || isLumibot || isLumibotSignal) ? 0.004 : 0.0035;
 
         // Preliminary SL distance for position sizing
         const prelimSlDist = rawPrice * (riskMult / 1.5) * (bot.config.slRatio || 1.0);
@@ -287,18 +345,26 @@ export class BotWorker {
         );
 
         let tradeNotes = `Trade executado por ${bot.name}. ${validation.reason} [Slippage: 0.05%, Fee: 0.1%]`;
-        let botLogMessage = `🚀 Nova Ordem Executada (${direction} ${bot.config.symbol} @ R$ ${entryPrice.toFixed(2)}). Slippage/Fee inclusos.`;
+        let botLogMessage = `🚀 Nova Ordem Executada (${direction} ${bot.config.symbol} @ $${entryPrice.toFixed(2)}). Slippage/Fee inclusos.`;
 
         if (isQuantBot) {
           tradeNotes = `[Quant-Bot ORB 15m] Risco 0.40% | Monte Carlo 500 Runs (~53% Pass Rate) | TimeGate OK (${Math.round(estimatedDurationSeconds / 60)} min)`;
-          botLogMessage = `🚀 Quant-Bot (ORB 15m) Executou Ordem (${direction} @ R$ ${entryPrice.toFixed(2)}). Slippage/Fee aplicados.`;
+          botLogMessage = `🚀 Quant-Bot (ORB 15m) Executou Ordem (${direction} @ $${entryPrice.toFixed(2)} USD). Slippage/Fee aplicados.`;
         } else if (isOrbEnhanced) {
           tradeNotes = `[ORB Agentic Enhanced] Retest VWAP verificado | Vol 1.8x | ATR Filter Pass | Red-Team Gate Approved`;
-          botLogMessage = `🚀 ORB Agentic Enhanced: Retest no VWAP Aprovado por Agentes (${direction} @ R$ ${entryPrice.toFixed(2)}).`;
+          botLogMessage = `🚀 ORB Agentic Enhanced: Retest no VWAP Aprovado por Agentes (${direction} @ $${entryPrice.toFixed(2)} USD).`;
         } else if (isRegimeDesk) {
           tradeNotes = `[Multi-Agent Desk] Supervisor: Trend-Following Mode | Debate Bull vs Bear: 3-1 | Risk Gate: Veto Pass`;
-          botLogMessage = `🚀 Multi-Agent Desk Executou Trade (${direction} @ R$ ${entryPrice.toFixed(2)}). Red-Team Veto: Aprovado.`;
+          botLogMessage = `🚀 Multi-Agent Desk Executou Trade (${direction} @ $${entryPrice.toFixed(2)} USD). Red-Team Veto: Aprovado.`;
+        } else if (isLumibot) {
+          tradeNotes = `[Lumibot Killer Strategy] Momentum (10p) + RSI 14 Pass (<70) | Risk Sizing 25% | Multi-Asset Gate OK`;
+          botLogMessage = `🤖 Lumibot Killer Momentum RSI Executou Ordem (${direction} @ $${entryPrice.toFixed(2)} USD) [GitHub: Lumiwealth/lumibot].`;
+        } else if (isLumibotSignal) {
+          tradeNotes = `[Lumibot SignalStrategy] composite_signal(RSI/MACD/BB) | Cash Risk 10% | Lookback 60d | Multi-Broker Engine Approved`;
+          botLogMessage = `🤖 Lumibot SignalStrategy Executou Ordem (${direction} ${bot.config.symbol} @ $${entryPrice.toFixed(2)} USD) [Alpaca/CCXT/IB Compatible].`;
         }
+
+        const initialAuditCode = `AUD-${botTimeframe.toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
         const newTrade: Trade = {
           id: `trd-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -316,12 +382,21 @@ export class BotWorker {
           pnl: -fee, // Initial fee cost
           pnlPercent: 0,
           entryTime: new Date().toISOString(),
+          clockHour: `${new Date().getHours().toString().padStart(2, '0')}:00`,
           botId: bot.id,
           botName: bot.name,
+          timeframe: botTimeframe,
+          auditCode: initialAuditCode,
+          auditStatus: 'PENDING_CLOSE',
           notes: tradeNotes,
         };
 
         store.addTrade(newTrade);
+        defaultTradeScheduler.recordTrade({
+          symbol: bot.config.symbol,
+          timeframe: botTimeframe,
+          exchange: account.broker === 'mercado_bitcoin' ? 'B3' : 'BINANCE',
+        });
         realisticExecutionService.recordOrder(account.id, account.broker);
         bot.lastLog = botLogMessage;
         bot.lastExecutionTime = new Date().toISOString();

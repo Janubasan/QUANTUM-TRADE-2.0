@@ -98,6 +98,55 @@ export class AuditLogger {
     }
     return true;
   }
+
+  public auditTradeClose(trade: {
+    id: string;
+    symbol: string;
+    direction: string;
+    entryPrice: number;
+    exitPrice: number;
+    pnl: number;
+    timeframe: string;
+    botName?: string;
+    accountName?: string;
+  }): { auditCode: string; auditHash: string; blockNumber: number } {
+    const payload = {
+      tradeId: trade.id,
+      symbol: trade.symbol,
+      direction: trade.direction,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.exitPrice,
+      pnl: trade.pnl,
+      timeframe: trade.timeframe,
+      botName: trade.botName || 'Audited-Bot',
+      accountName: trade.accountName || 'Primary-Account',
+      closeTimestamp: new Date().toISOString(),
+    };
+
+    const envelope: SignedEnvelope = {
+      source: `AUDIT_ENGINE_${trade.timeframe.toUpperCase()}`,
+      timestamp: Date.now() / 1000,
+      payload,
+      hash: crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+      signature: `SIG_AUDITED_${trade.id.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`,
+      status: 'APPROVED',
+      reason: `Trade Fechado e Auditado no Timeframe ${trade.timeframe} (PnL R$ ${trade.pnl.toFixed(2)})`,
+    };
+
+    const block = this.append(envelope);
+    const auditCode = `AUD-${trade.timeframe.toUpperCase()}-${envelope.hash.substring(0, 8).toUpperCase()}`;
+    
+    return {
+      auditCode,
+      auditHash: block.current_hash,
+      blockNumber: block.blockNumber,
+    };
+  }
+
+  public resetChain() {
+    this.chain = [];
+    this.initGenesisBlock();
+  }
 }
 
 export const defaultAuditLogger = new AuditLogger();

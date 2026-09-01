@@ -52,11 +52,19 @@ export class RAGValidator {
    * Validates payload using contextual RAG retrieval.
    * Verifies if close price and volume are within plausible historical bounds (+/- 15% margin).
    */
-  public isPlausible(payload: { symbol: string; close: number; volume?: number }, source: string): boolean {
+  public isPlausible(payload: { symbol: string; close?: number; volume?: number }, _source: string): boolean {
     const symbol = payload.symbol;
     const close = payload.close;
 
-    if (!symbol || close === undefined || close === null || isNaN(close) || close <= 0) {
+    if (!symbol) {
+      return false;
+    }
+
+    if (close === undefined || close === null || isNaN(close)) {
+      return true; // Allow non-price specific audit records
+    }
+
+    if (close <= 0) {
       return false;
     }
 

@@ -1,0 +1,252 @@
+{
+  "accounts": [
+    {
+      "id": "acc-demo-1",
+      "name": "Desafio $100 USD Demo (Simulado)",
+      "broker": "binance",
+      "type": "demo",
+      "initialBalance": 100.0,
+      "currentBalance": 100.0,
+      "baseCurrency": "USD",
+      "isActive": true,
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "winningTrades": 0,
+      "pnlTotal": 0.0
+    }
+  ],
+  "bots": [
+    {
+      "id": "bot-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "Quantum M1 Pro Scalper (Audit 1m)",
+      "strategy": "m1_pro",
+      "config": {
+        "symbol": "BTC/USDT",
+        "timeframe": "1m",
+        "riskPercent": 0.5,
+        "tpRatio": 2.0,
+        "slRatio": 1.0
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "Bot inicializado na banca de $ 100.00 USD. Timeframe Auditado 1m ativo."
+    },
+    {
+      "id": "bot-regime-desk-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "Multi-Agent Regime Desk (Audit 5m)",
+      "strategy": "multi_agent_regime_desk",
+      "config": {
+        "symbol": "BTC/USDT",
+        "timeframe": "5m",
+        "riskPercent": 0.5,
+        "tpRatio": 2.0,
+        "slRatio": 1.0,
+        "customParams": {
+          "regimeSwitch": 1,
+          "bullBearDebate": 1,
+          "redTeamVeto": 1,
+          "meanReversionEnabled": 1
+        }
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "Multi-Agent Regime Desk ativo no Timeframe Auditado 5m (USD)."
+    },
+    {
+      "id": "bot-eth-wave-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "ETH Quantum Trend Wave (Audit 10m)",
+      "strategy": "momentum",
+      "config": {
+        "symbol": "ETH/USDT",
+        "timeframe": "10m",
+        "riskPercent": 0.5,
+        "tpRatio": 2.2,
+        "slRatio": 1.0
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "ETH Quantum Trend Wave ativo no Timeframe Auditado 10m (USD)."
+    },
+    {
+      "id": "bot-quant-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "Quant-Bot ORB & Monte Carlo (Audit 15m)",
+      "strategy": "quant_orb_15m",
+      "config": {
+        "symbol": "BTC/USDT",
+        "timeframe": "15m",
+        "riskPercent": 0.4,
+        "tpRatio": 2.5,
+        "slRatio": 1.0,
+        "customParams": {
+          "dailyStopFixed": 800,
+          "passTarget": 6000,
+          "maxTrailingDrawdown": 3000,
+          "mcSimulations": 500
+        }
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "Quant-Bot (ORB 15m) ativo no Timeframe Auditado 15m ($ USD)."
+    },
+    {
+      "id": "bot-sol-breakout-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "SOL Momentum Breakout (Audit 30m)",
+      "strategy": "momentum",
+      "config": {
+        "symbol": "SOL/USDT",
+        "timeframe": "30m",
+        "riskPercent": 0.5,
+        "tpRatio": 2.5,
+        "slRatio": 1.0
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "SOL Momentum Breakout ativo no Timeframe Auditado 30m ($ USD)."
+    },
+    {
+      "id": "bot-btc-macro-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "BTC Macro Trend Sentinel (Audit 1h)",
+      "strategy": "grid",
+      "config": {
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+        "riskPercent": 0.4,
+        "tpRatio": 2.5,
+        "slRatio": 1.0
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "BTC Macro Trend Sentinel ativo no Timeframe Auditado 1h ($ USD)."
+    },
+    {
+      "id": "bot-lumibot-killer-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "Lumibot Killer Momentum + RSI (Multi-Asset 1h)",
+      "strategy": "lumibot_killer_momentum_rsi",
+      "config": {
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+        "riskPercent": 0.3,
+        "tpRatio": 2.8,
+        "slRatio": 1.0,
+        "customParams": {
+          "momentumPeriod": 10,
+          "rsiPeriod": 14,
+          "rsiOverbought": 70,
+          "rsiOversold": 30,
+          "maxPositions": 2,
+          "riskPerTrade": 0.25,
+          "symbols": "BTC/USDT, ETH/USDT, SOL/USDT, SPY, QQQ",
+          "engine": "Lumibot v3 (YahooDataBacktesting / Alpaca)",
+          "githubRepo": "https://github.com/Lumiwealth/lumibot"
+        }
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "🤖 Lumibot Killer Strategy ativo: Momentum 10p + RSI 14 filter (<70) + Risk Sizing 25% ($ USD)."
+    },
+    {
+      "id": "bot-lumibot-signal-strategy-1",
+      "accountId": "acc-demo-1",
+      "accountName": "Desafio $100 USD Demo (Simulado)",
+      "accountType": "demo",
+      "name": "Lumibot SignalStrategy (Composite RSI/MACD/BB)",
+      "strategy": "lumibot_signal_strategy",
+      "config": {
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+        "riskPercent": 0.5,
+        "tpRatio": 2.6,
+        "slRatio": 1.0,
+        "customParams": {
+          "symbols": "SPY, QQQ, BTC/USDT, ETH/USDT, SOL/USDT",
+          "cashAtRiskPerTrade": 0.1,
+          "lookbackBars": 60,
+          "sleeptime": "1D",
+          "engine": "Lumibot Strategy Engine (Alpaca / CCXT / IB / Binance)",
+          "githubRepo": "https://github.com/Lumiwealth/lumibot",
+          "indicatorsSource": "indicators.composite_signal()"
+        }
+      },
+      "status": "running",
+      "createdAt": "2026-08-29T12:00:00.000Z",
+      "totalTrades": 0,
+      "pnlTotal": 0.0,
+      "winRate": 0.0,
+      "lastExecutionTime": "2026-08-29T12:00:00.000Z",
+      "lastLog": "🤖 Lumibot SignalStrategy ativo: composite_signal(RSI/MACD/BB) + 10% cash_at_risk + Multi-Broker ($ USD)."
+    }
+  ],
+  "trades": [],
+  "signals": [],
+  "logs": [
+    {
+      "id": "log-1",
+      "timestamp": "2026-08-29T12:00:00.000Z",
+      "type": "INFO",
+      "message": "Sistema Quantum Trade ativado em Dólar (USD). Banca inicial calibrada em $ 100.00 USD."
+    },
+    {
+      "id": "log-2",
+      "timestamp": "2026-08-29T12:00:00.000Z",
+      "type": "RULE",
+      "message": "Regra de Lucro Stockraft ativada: Riscos calibrados estritamente em Dólar ($ USD) com base no capital inicial."
+    }
+  ],
+  "sessionInfo": {
+    "sessionStartTime": 1788000000000,
+    "sessionStartedAt": "2026-08-29T12:00:00.000Z",
+    "isTimerRunning": true,
+    "lastClockTick": "2026-08-29T12:00:00.000Z"
+  },
+  "webhookAudits": [],
+  "savedAt": "2026-08-29T12:00:00.000Z"
+}

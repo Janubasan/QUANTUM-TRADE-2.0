@@ -32,9 +32,11 @@ export function OperationalGuardCard({ onRefresh }: OperationalGuardCardProps) {
   const loadStatus = async () => {
     try {
       const data = await fetchOperationalGuardStatus();
-      setGuardStatus(data);
-    } catch (e) {
-      console.error(e);
+      if (data) {
+        setGuardStatus(data);
+      }
+    } catch {
+      // Ignora falhas transitórias de conexão durante reinicializações
     }
   };
 

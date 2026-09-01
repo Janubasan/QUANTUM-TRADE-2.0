@@ -18,6 +18,7 @@ import {
   Zap,
   Clock,
   Sliders,
+  RotateCcw,
 } from 'lucide-react';
 import {
   fetchAuditChain,
@@ -25,6 +26,7 @@ import {
   runAuditDemo,
   fetchSchedulerState,
   updateSchedulerMode,
+  resetAuditChain,
 } from '../services/api';
 
 export function AuditValidationView() {
@@ -114,6 +116,18 @@ export function AuditValidationView() {
     URL.revokeObjectURL(url);
   };
 
+  const handleResetAuditChain = async () => {
+    setLoading(true);
+    try {
+      await resetAuditChain();
+      await loadData();
+    } catch (err) {
+      console.error('Error resetting audit chain:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner & Control Bar */}
@@ -145,6 +159,16 @@ export function AuditValidationView() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Atualizar Cadeia
+          </button>
+
+          <button
+            onClick={handleResetAuditChain}
+            disabled={loading}
+            className="px-4 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-2xl text-xs font-mono font-semibold flex items-center gap-2 transition cursor-pointer"
+            title="Resetar Cadeia para Bloco Gênesis"
+          >
+            <RotateCcw className="w-4 h-4 text-rose-400" />
+            Resetar Cadeia Auditada
           </button>
 
           <button

@@ -16,6 +16,10 @@ import {
   Cpu,
   X,
   CheckCircle,
+  Code2,
+  Layers,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 
 interface BotsViewProps {
@@ -39,6 +43,14 @@ export function BotsView({ bots, accounts, logs, onRefreshData }: BotsViewProps)
   const [isTogglingAll, setIsTogglingAll] = useState(false);
 
   const strategyNames: Record<StrategyId, { name: string; desc: string }> = {
+    lumibot_signal_strategy: {
+      name: 'Lumibot Multi-Broker SignalStrategy (Composite RSI/MACD/BB)',
+      desc: 'Estratégia real Lumibot (MIT) com composite_signal (RSI + MACD + Bollinger Bands), sizing de 10% do caixa (cash_at_risk = 0.10), lookback de 60 barras e compatibilidade multi-broker (Alpaca, CCXT, Binance, B3, MT5).',
+    },
+    lumibot_killer_momentum_rsi: {
+      name: 'Lumibot Killer Momentum + RSI Filter',
+      desc: 'Estratégia híbrida oficial Lumibot: Ranking de Momentum 10p, Filtro de RSI 14 < 70, Saída em Oversold (<30) e Risk Sizing 25% com Rebalanceamento Multi-Ativo.',
+    },
     m1_pro: { name: 'M1 Pro Scalper Setup', desc: 'Scalping de alta frequência em M1 com RSI (28/72) e Média Exponencial' },
     quant_orb_15m: { name: 'Quant-Bot (ORB 15m & Monte Carlo)', desc: 'Agente Quantitativo ORB 15m CME Micro Futures com Simulador Monte Carlo (500 runs) e análise Prop Firm' },
     orb_agentic_enhanced: { name: 'ORB Agentic Enhanced (Intraday Momentum)', desc: 'Filtros Agenticos: ATR < 1.5x, Volume > 1.5x, Retest no VWAP, Internal Candle Bias e Red-Team Risk Gate' },
@@ -177,9 +189,16 @@ export function BotsView({ bots, accounts, logs, onRefreshData }: BotsViewProps)
               <div>
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                      {bot.config.symbol} • {bot.config.timeframe}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                        {bot.config.symbol} • {bot.config.timeframe}
+                      </span>
+                      {bot.strategy === 'lumibot_killer_momentum_rsi' && (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          Lumibot v3 (MIT)
+                        </span>
+                      )}
+                    </div>
                     <h3 className="text-lg font-bold text-white mt-2 tracking-tight">{bot.name}</h3>
                   </div>
 
@@ -216,7 +235,7 @@ export function BotsView({ bots, accounts, logs, onRefreshData }: BotsViewProps)
                   <div className="flex justify-between">
                     <span className="text-white/40">PnL Acumulado:</span>
                     <span className={`font-bold ${bot.pnlTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {bot.pnlTotal >= 0 ? '+' : ''}R$ {bot.pnlTotal.toFixed(2)}
+                      {bot.pnlTotal >= 0 ? '+' : ''}$ {bot.pnlTotal.toFixed(2)} USD
                     </span>
                   </div>
                 </div>
@@ -278,6 +297,75 @@ export function BotsView({ bots, accounts, logs, onRefreshData }: BotsViewProps)
               <span className="text-white/80">{log.message}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Lumibot Multi-Broker SignalStrategy Architecture Card */}
+      <div className="bg-gradient-to-br from-emerald-950/40 via-zinc-900/60 to-black border border-emerald-500/30 rounded-3xl p-6 shadow-2xl space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Lumibot Engine (MIT Open Source)
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                Multi-Broker Agnostic
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2 tracking-tight">
+              <Code2 className="w-5 h-5 text-emerald-400" />
+              Robô Lumibot: SignalStrategy (Composite RSI / MACD / Bollinger)
+            </h3>
+            <p className="text-xs text-white/50">
+              Estratégia real reaproveitando o mesmo motor <code className="text-emerald-300 font-mono">composite_signal()</code> de indicators.py com sizing de 10% do caixa disponível.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5" /> indicators.py Integrado
+            </span>
+          </div>
+        </div>
+
+        {/* Parameters & Live Logic Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+          <div className="bg-black/50 border border-emerald-500/20 rounded-2xl p-3">
+            <span className="text-white/40 text-[10px] block uppercase">Cash at Risk</span>
+            <span className="text-emerald-400 font-bold text-sm">10% / trade</span>
+            <span className="text-[10px] text-white/40 block mt-0.5">_size_position(cash, price)</span>
+          </div>
+          <div className="bg-black/50 border border-emerald-500/20 rounded-2xl p-3">
+            <span className="text-white/40 text-[10px] block uppercase">Lookback Bars</span>
+            <span className="text-cyan-300 font-bold text-sm">60 Barras</span>
+            <span className="text-[10px] text-white/40 block mt-0.5">get_historical_prices</span>
+          </div>
+          <div className="bg-black/50 border border-emerald-500/20 rounded-2xl p-3">
+            <span className="text-white/40 text-[10px] block uppercase">Decisão (Sleeptime)</span>
+            <span className="text-amber-300 font-bold text-sm">1D (Diário) / 1h</span>
+            <span className="text-[10px] text-white/40 block mt-0.5">on_trading_iteration()</span>
+          </div>
+          <div className="bg-black/50 border border-emerald-500/20 rounded-2xl p-3">
+            <span className="text-white/40 text-[10px] block uppercase">Ativos Padrão</span>
+            <span className="text-indigo-300 font-bold text-sm">SPY, QQQ, BTC</span>
+            <span className="text-[10px] text-white/40 block mt-0.5">Agnóstico de Corretora</span>
+          </div>
+        </div>
+
+        {/* Multi-Broker compatibility pills */}
+        <div className="bg-black/70 border border-white/10 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/70 font-bold flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-emerald-400" /> Brokers Suportados nativamente pelo Lumibot:
+            </span>
+            <span className="text-[10px] text-white/40 font-mono">run_backtest.py | run_live_alpaca.py</span>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px] font-mono">
+            {['Alpaca Markets', 'CCXT (Crypto Multi-Exchanges)', 'Interactive Brokers', 'Tradier', 'Tradovate', 'Charles Schwab', 'Binance / B3 Bridge'].map((broker, idx) => (
+              <span key={idx} className="bg-zinc-800/80 text-white/90 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-emerald-400" /> {broker}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -415,6 +503,8 @@ export function BotsView({ bots, accounts, logs, onRefreshData }: BotsViewProps)
                   onChange={(e) => setStrategy(e.target.value as StrategyId)}
                   className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
                 >
+                  <option value="lumibot_signal_strategy" className="bg-zinc-900">Lumibot Multi-Broker SignalStrategy (Composite RSI/MACD/BB)</option>
+                  <option value="lumibot_killer_momentum_rsi" className="bg-zinc-900">Lumibot Killer Momentum + RSI (Multi-Asset)</option>
                   <option value="quant_orb_15m" className="bg-zinc-900">Quant-Bot (ORB 15m & Prop Firm Monte Carlo)</option>
                   <option value="orb_agentic_enhanced" className="bg-zinc-900">ORB Agentic Enhanced (Intraday Momentum)</option>
                   <option value="multi_agent_regime_desk" className="bg-zinc-900">Multi-Agent Regime Desk (Desk Autônomo)</option>

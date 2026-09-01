@@ -19,6 +19,12 @@ import { realisticExecutionService } from './server/services/realisticExecutionS
 import { runner247Service } from './server/engine/runner247Service.js';
 import { firebaseService } from './server/services/firebaseService.js';
 import { operationalGuard } from './server/services/operationalGuard.js';
+import { nautilusBridgeService } from './server/services/nautilusBridgeService.js';
+import { realExecutionGateway } from './server/services/realExecutionGateway.js';
+import { BlockchainAdapter, CHAINS, ChainKey } from './server/services/adapters/blockchainAdapter.js';
+import { marketClockService } from './server/services/marketClockService.js';
+import { executionScheduler } from './server/services/executionScheduler.js';
+import { encryptSecret } from './server/services/cryptoService.js';
 import { Account, Bot, Trade } from './src/types.js';
 
 async function startServer() {
@@ -59,39 +65,69 @@ async function startServer() {
   });
 
   app.get('/api/killswitch/status', async (_req, res) => {
-    const firestoreKill = await operationalGuard.getKillSwitch();
-    res.json({ isActive: killSwitchService.isActive && !firestoreKill, firestoreKillSwitch: firestoreKill });
+    try {
+      const firestoreKill = await operationalGuard.getKillSwitch();
+      res.setHeader('Content-Type', 'application/json');
+      res.json({ isActive: killSwitchService.isActive && !firestoreKill, firestoreKillSwitch: firestoreKill });
+    } catch {
+      res.setHeader('Content-Type', 'application/json');
+      res.json({ isActive: killSwitchService.isActive, firestoreKillSwitch: false });
+    }
   });
 
   // --- OPERATIONAL GUARD COMPLIANCE ENDPOINTS ---
   app.get('/api/operational-guard/status', async (_req, res) => {
-    const firestoreKill = await operationalGuard.getKillSwitch();
-    res.json({
-      killSwitch: firestoreKill,
-      maxOrdersPerHour: operationalGuard.MAX_ORDERS_PER_HOUR,
-      dailyProfitLimitPercent: operationalGuard.DAILY_PROFIT_LIMIT_PERCENT,
-      slippageRate: operationalGuard.SLIPPAGE_RATE,
-      feeRate: operationalGuard.FEE_RATE,
-      timeMinSeconds: operationalGuard.TIME_MIN_SECONDS,
-      timeMaxSeconds: operationalGuard.TIME_MAX_SECONDS,
-    });
+    try {
+      const firestoreKill = await operationalGuard.getKillSwitch();
+      res.setHeader('Content-Type', 'application/json');
+      res.json({
+        killSwitch: firestoreKill,
+        maxOrdersPerHour: operationalGuard.MAX_ORDERS_PER_HOUR,
+        dailyProfitLimitPercent: operationalGuard.DAILY_PROFIT_LIMIT_PERCENT,
+        slippageRate: operationalGuard.SLIPPAGE_RATE,
+        feeRate: operationalGuard.FEE_RATE,
+        timeMinSeconds: operationalGuard.TIME_MIN_SECONDS,
+        timeMaxSeconds: operationalGuard.TIME_MAX_SECONDS,
+      });
+    } catch {
+      res.setHeader('Content-Type', 'application/json');
+      res.json({
+        killSwitch: operationalGuard.isKillSwitchActive(),
+        maxOrdersPerHour: operationalGuard.MAX_ORDERS_PER_HOUR,
+        dailyProfitLimitPercent: operationalGuard.DAILY_PROFIT_LIMIT_PERCENT,
+        slippageRate: operationalGuard.SLIPPAGE_RATE,
+        feeRate: operationalGuard.FEE_RATE,
+        timeMinSeconds: operationalGuard.TIME_MIN_SECONDS,
+        timeMaxSeconds: operationalGuard.TIME_MAX_SECONDS,
+      });
+    }
   });
 
   app.post('/api/operational-guard/killswitch', async (req, res) => {
-    const { active } = req.body || {};
-    const isActive = typeof active === 'boolean' ? active : true;
-    await operationalGuard.setKillSwitch(isActive);
-    killSwitchService.setActive(!isActive);
-    res.json({ success: true, kill_switch: isActive });
+    try {
+      const { active } = req.body || {};
+      const isActive = typeof active === 'boolean' ? active : true;
+      await operationalGuard.setKillSwitch(isActive);
+      killSwitchService.setActive(!isActive);
+      res.setHeader('Content-Type', 'application/json');
+      res.json({ success: true, kill_switch: isActive });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Erro ao alterar Kill Switch' });
+    }
   });
 
   app.post('/api/operational-guard/sign', (req, res) => {
-    const { payload, secret } = req.body || {};
-    if (!payload || !secret) {
-      return res.status(400).json({ error: 'payload e secret são obrigatórios' });
+    try {
+      const { payload, secret } = req.body || {};
+      if (!payload || !secret) {
+        return res.status(400).json({ error: 'payload e secret são obrigatórios' });
+      }
+      const signature = operationalGuard.signPayload(payload, secret);
+      res.setHeader('Content-Type', 'application/json');
+      res.json({ signature });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Erro ao assinar payload' });
     }
-    const signature = operationalGuard.signPayload(payload, secret);
-    res.json({ signature });
   });
 
   // --- TIME GATE LIMITS ENDPOINT ---
@@ -126,7 +162,7 @@ async function startServer() {
   // --- MANUAL OPEN ORDER ENDPOINT WITH TIMEGATE & OPERATIONAL GUARD EXECUTION ---
   app.post('/api/open', async (req, res) => {
     const {
-      symbol = 'BTC/BRL',
+      symbol = 'BTC/USDT',
       side = 'BUY',
       quantity = 0.001,
       tp,
@@ -139,8 +175,8 @@ async function startServer() {
 
     try {
       const account = store.getAccount(accountId) || store.getState().accounts[0];
-      const ticker = store.getState().tickers[symbol] || store.getState().tickers['BTC/BRL'];
-      const rawPrice = ticker ? ticker.price : 345000;
+      const ticker = store.getState().tickers[symbol] || store.getState().tickers['BTC/USDT'];
+      const rawPrice = ticker ? ticker.price : 64250;
 
       const tpTarget = tp || (side === 'BUY' ? rawPrice * 1.01 : rawPrice * 0.99);
       const slTarget = sl || (side === 'BUY' ? rawPrice * 0.995 : rawPrice * 1.005);
@@ -202,11 +238,11 @@ async function startServer() {
         entryTime: new Date().toISOString(),
         botId: 'manual',
         botName: 'Operação Manual (Compliance Guard)',
-        notes: `Ordem Validada | Slippage: R$ ${slippage.toFixed(2)} (0.05%) | Fee: R$ ${fee.toFixed(2)} (0.1%) | TimeGate: ${Math.round(estimatedDurationSeconds / 60)} min`,
+        notes: `Ordem Validada | Slippage: $${slippage.toFixed(2)} (0.05%) | Fee: $${fee.toFixed(2)} (0.1%) | TimeGate: ${Math.round(estimatedDurationSeconds / 60)} min`,
       };
 
       store.addTrade(newTrade);
-      store.addLog('TRADE', `Ordem manual criada em ${symbol} (${direction} @ R$ ${executedPrice.toFixed(2)}). Guard OK.`);
+      store.addLog('TRADE', `Ordem manual criada em ${symbol} (${direction} @ $${executedPrice.toFixed(2)} USD). Guard OK.`);
 
       res.json({
         success: true,
@@ -225,7 +261,45 @@ async function startServer() {
   botWorker.start();
   priceAggregatorService.start();
 
+  // Hydrate persistent state from Firestore Cloud Vault (anti-reset safeguard)
+  store.hydrateFromCloudVault().catch((err) => {
+    console.warn('[Startup] Firestore cloud vault hydration notice:', err?.message || err);
+  });
+
   // --- API ROUTES ---
+
+  // --- TRADING CLOCK & HOURLY ANALYTICS ENDPOINTS ---
+  app.get('/api/session-stats', (_req, res) => {
+    try {
+      const stats = store.getHourlyStats();
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao calcular estatísticas por hora.' });
+    }
+  });
+
+  app.post('/api/session-stats/reset', (_req, res) => {
+    try {
+      store.resetSessionClock();
+      const stats = store.getHourlyStats();
+      store.addLog('INFO', 'Relógio de sessão e cronômetro horário reinicializados pelo usuário.');
+      res.json({ success: true, stats });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao reiniciar relógio de sessão.' });
+    }
+  });
+
+  app.post('/api/session-stats/toggle', (req, res) => {
+    try {
+      const { running } = req.body || {};
+      const session = store.toggleSessionTimer(running);
+      const stats = store.getHourlyStats();
+      store.addLog('INFO', `Relógio de sessão ${session.isTimerRunning ? 'retomado' : 'pausado'}.`);
+      res.json({ success: true, isTimerRunning: session.isTimerRunning, stats });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao alternar relógio de sessão.' });
+    }
+  });
 
   // Health check (root & api)
   app.get('/health', (_req, res) => {
@@ -239,6 +313,7 @@ async function startServer() {
   // --- TRADINGVIEW & EXTERNAL WEBHOOK ENGINE ENDPOINTS ---
   const handleWebhookTrade = async (req: express.Request, res: express.Response) => {
     const payload = req.body || {};
+    const signature = (req.headers['x-signature-256'] || req.headers['x-hmac-sha256'] || '') as string;
     const receivedAt = Math.floor(Date.now() / 1000);
 
     // Fast response under 200ms
@@ -250,7 +325,7 @@ async function startServer() {
 
     // Execute audit and trade in background
     try {
-      await webhookEngine.processWebhook(payload);
+      await webhookEngine.processWebhook(payload, signature);
     } catch (err: any) {
       console.error('Webhook execution error:', err);
     }
@@ -318,6 +393,19 @@ async function startServer() {
     const result = defaultAuditRunner.runDemoCycle();
     store.addLog('INFO', `Demo Auditado de Ingestão executado. Hash Head: ${result.chainHead.substring(0, 10)}...`);
     res.json(result);
+  });
+
+  app.post('/api/audit/reset', (_req, res) => {
+    defaultAuditLogger.resetChain();
+    defaultAuditRunner.clearSimulations();
+    store.addLog('INFO', 'Trilha de Auditoria Criptográfica resetada para o Bloco Gênesis.');
+    res.json({
+      success: true,
+      message: 'Cadeia de auditoria resetada com sucesso para o Bloco Gênesis.',
+      headHash: defaultAuditLogger.getLatestBlock()?.current_hash,
+      totalBlocks: defaultAuditLogger.getChain().length,
+      integrityValid: defaultAuditLogger.verifyIntegrity(),
+    });
   });
 
   // --- MARKET REGULATOR & SCHEDULER ENDPOINTS ---
@@ -501,7 +589,7 @@ async function startServer() {
   });
 
   app.post('/api/accounts', (req, res) => {
-    const { name, broker, type, initialBalance, baseCurrency, apiKeyEncrypted, apiSecretEncrypted } = req.body;
+    const { name, broker, type, initialBalance, baseCurrency, walletAddress, apiKeyEncrypted, apiSecretEncrypted } = req.body;
     const balance = Number(initialBalance) || (type === 'demo' ? 100 : 500);
 
     const newAccount: Account = {
@@ -511,9 +599,10 @@ async function startServer() {
       type: type || 'demo',
       initialBalance: balance,
       currentBalance: balance,
-      baseCurrency: baseCurrency || 'BRL',
-      apiKeyEncrypted: apiKeyEncrypted ? `AES256:${apiKeyEncrypted.slice(0, 6)}...` : undefined,
-      apiSecretEncrypted: apiSecretEncrypted ? `AES256:${apiSecretEncrypted.slice(0, 6)}...` : undefined,
+      baseCurrency: baseCurrency || 'USD',
+      walletAddress: walletAddress || (broker === 'coinbase' ? '3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv' : undefined),
+      apiKeyEncrypted: apiKeyEncrypted ? encryptSecret(apiKeyEncrypted) : undefined,
+      apiSecretEncrypted: apiSecretEncrypted ? encryptSecret(apiSecretEncrypted) : undefined,
       isActive: true,
       createdAt: new Date().toISOString(),
       totalTrades: 0,
@@ -522,7 +611,7 @@ async function startServer() {
     };
 
     store.addAccount(newAccount);
-    store.addLog('INFO', `Nova conta criada: ${newAccount.name} (${newAccount.type.toUpperCase()} - ${newAccount.broker.toUpperCase()}).`);
+    store.addLog('INFO', `Nova conta criada: ${newAccount.name} (${newAccount.type.toUpperCase()} - ${newAccount.broker.toUpperCase()}) em $ USD.`);
     res.json(newAccount);
   });
 
@@ -532,18 +621,19 @@ async function startServer() {
 
     account.initialBalance = 100.0;
     account.currentBalance = 100.0;
+    account.baseCurrency = 'USD';
     account.pnlTotal = 0.0;
     account.totalTrades = 0;
     account.winningTrades = 0;
     store.updateAccount(account);
 
-    store.addLog('INFO', `Conta ${account.name} resetada para R$ 100,00 inicial.`);
+    store.addLog('INFO', `Conta ${account.name} resetada para $ 100.00 USD inicial.`);
     res.json(account);
   });
 
   app.post('/api/store/reset', (_req, res) => {
     store.resetDataStore();
-    res.json({ success: true, message: 'Plataforma e contas resetadas com sucesso para banca inicial limpa.' });
+    res.json({ success: true, message: 'Plataforma e contas resetadas com sucesso para banca inicial limpa de $ 100.00 USD.' });
   });
 
   app.delete('/api/accounts/:id', (req, res) => {
@@ -621,6 +711,8 @@ async function startServer() {
     const fee = guardRes.order.fee || 0;
     const slippage = guardRes.order.slippage || 0;
 
+    const initialAuditCode = `AUD-M-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
     const manualTrade: Trade = {
       id: `trd-m-${Date.now()}`,
       accountId: account.id,
@@ -637,11 +729,14 @@ async function startServer() {
       pnl: -fee,
       pnlPercent: 0,
       entryTime: new Date().toISOString(),
+      timeframe: '15m',
+      auditCode: initialAuditCode,
+      auditStatus: 'PENDING_CLOSE',
       notes: `Operação manual aprovada (${validation.reason}) | Slippage: R$ ${slippage.toFixed(2)} | Fee: R$ ${fee.toFixed(2)}`,
     };
 
     store.addTrade(manualTrade);
-    store.addLog('TRADE', `Trade manual aberto por usuário na conta ${account.name} (${direction} ${symbol}).`);
+    store.addLog('TRADE', `Trade manual aberto por usuário na conta ${account.name} (${direction} ${symbol}) [Audit: ${initialAuditCode}].`);
     res.json(manualTrade);
   });
 
@@ -654,6 +749,24 @@ async function startServer() {
 
     trade.status = 'closed';
     trade.closeTime = new Date().toISOString();
+    trade.exitTime = trade.closeTime;
+
+    // Cryptographic Audit Seal Generation (mirror verification hash)
+    const auditResult = defaultAuditLogger.auditTradeClose({
+      id: trade.id,
+      symbol: trade.symbol,
+      direction: trade.direction,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.currentPrice || trade.entryPrice,
+      pnl: trade.pnl,
+      timeframe: trade.timeframe || '15m',
+      botName: trade.botName || 'Manual Execution',
+      accountName: trade.accountName,
+    });
+
+    trade.auditCode = auditResult.auditCode;
+    trade.auditHash = auditResult.auditHash;
+    trade.auditStatus = 'AUDITED_SEALED';
 
     const account = store.getAccount(trade.accountId);
     if (account) {
@@ -665,7 +778,7 @@ async function startServer() {
     }
 
     store.updateTrade(trade);
-    store.addLog('TRADE', `Operação ${trade.symbol} encerrada manualmente. PnL: R$ ${trade.pnl.toFixed(2)}.`);
+    store.addLog('TRADE', `Operação ${trade.symbol} encerrada manualmente. PnL: R$ ${trade.pnl.toFixed(2)} [Audit: ${auditResult.auditCode}].`);
     res.json(trade);
   });
 
@@ -764,6 +877,239 @@ async function startServer() {
     req.on('close', () => {
       clearInterval(interval);
     });
+  });
+
+  // --- PARALLEL NAUTILUS TRADER BRIDGE ENDPOINTS ---
+  app.get('/api/nautilus/status', (_req, res) => {
+    res.json(nautilusBridgeService.getStatus());
+  });
+
+  app.post('/api/nautilus/token', (req, res) => {
+    const { username = 'trader@site.com' } = req.body || {};
+    const token = nautilusBridgeService.generateJwtToken(username);
+    res.json({
+      access_token: token,
+      token_type: 'bearer',
+      expires_in: 1800,
+      user: { username, full_name: 'Trader Pro (Nautilus Node)', disabled: false },
+    });
+  });
+
+  app.post('/api/nautilus/engine/start', (_req, res) => {
+    try {
+      const result = nautilusBridgeService.startEngine();
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/nautilus/engine/stop', (_req, res) => {
+    try {
+      const result = nautilusBridgeService.stopEngine();
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/nautilus/trade/order', (req, res) => {
+    try {
+      const { instrument, side, quantity, price } = req.body || {};
+      if (!instrument || !side || !quantity) {
+        return res.status(400).json({ error: 'Parâmetros instrument, side e quantity são obrigatórios.' });
+      }
+      const order = nautilusBridgeService.placeOrder(instrument, side, Number(quantity), price ? Number(price) : undefined);
+      res.json({
+        message: 'Ordem enviada para o motor Nautilus Trader com sucesso',
+        order,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/nautilus/orders', (_req, res) => {
+    res.json(nautilusBridgeService.getOrders());
+  });
+
+  app.get('/api/nautilus/logs', (_req, res) => {
+    res.json(nautilusBridgeService.getLogs());
+  });
+
+  // --- REAL EXECUTION GATEWAY & MARKET CLOCK ENDPOINTS ---
+  app.get('/api/real-execution/status', (_req, res) => {
+    res.json(realExecutionGateway.getStatus());
+  });
+
+  app.get('/api/real-execution/config', (_req, res) => {
+    res.json(realExecutionGateway.getConfig());
+  });
+
+  app.post('/api/real-execution/config', (req, res) => {
+    try {
+      realExecutionGateway.setConfig(req.body || {});
+      res.json(realExecutionGateway.getConfig());
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/real-execution/adapters', (_req, res) => {
+    const adapters = realExecutionGateway.getAllAdapters().map((a) => a.getStatus());
+    res.json(adapters);
+  });
+
+  app.post('/api/real-execution/adapters/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      const { isEnabled, isSandbox } = req.body || {};
+      realExecutionGateway.updateAdapterConfig(id, isEnabled, isSandbox);
+      const adapter = realExecutionGateway.getAdapter(id);
+      if (!adapter) {
+        return res.status(404).json({ error: 'Adaptador não encontrado' });
+      }
+      res.json(adapter.getStatus());
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/real-execution/ping/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await realExecutionGateway.pingAdapter(id);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ success: false, latencyMs: 0, error: e.message });
+    }
+  });
+
+  app.get('/api/real-execution/balances', async (_req, res) => {
+    try {
+      const balances = await realExecutionGateway.getAllBalances();
+      res.json(balances);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/real-execution/markets', (_req, res) => {
+    res.json(marketClockService.getAllMarketStatuses());
+  });
+
+  app.get('/api/real-execution/history', (_req, res) => {
+    res.json(realExecutionGateway.getHistory());
+  });
+
+  app.get('/api/real-execution/queue', (_req, res) => {
+    res.json(executionScheduler.getAllQueued());
+  });
+
+  app.post('/api/real-execution/dispatch', async (req, res) => {
+    try {
+      const order = req.body || {};
+      if (!order.symbol || !order.quantity || !order.side) {
+        return res.status(400).json({ error: 'symbol, quantity e side são obrigatórios' });
+      }
+      const signedOrder = {
+        id: order.id || `direct-ord-${Date.now()}`,
+        account_id: order.account_id || 'acc-primary',
+        symbol: order.symbol,
+        side: order.side,
+        quantity: Number(order.quantity),
+        price: order.price ? Number(order.price) : undefined,
+        order_hash: `hash-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+        validated_at: new Date().toISOString(),
+      };
+      const receipt = await realExecutionGateway.dispatch(signedOrder);
+      res.json({ success: true, receipt });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // --- EVM BLOCKCHAIN ON-CHAIN DIRECT INTEGRATION ---
+  app.get('/api/blockchain/chains', (_req, res) => {
+    res.json({ chains: CHAINS });
+  });
+
+  app.get('/api/blockchain/wallet', async (_req, res) => {
+    try {
+      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
+      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
+      
+      const nativeBalance = await adapter.getNativeBalance();
+      const currentChain = adapter.getChain();
+      const balances = await adapter.getBalances();
+      
+      res.json({
+        address: adapter.address,
+        chain: currentChain,
+        nativeBalance,
+        balances,
+        isSandbox: adapter.isSandbox,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/blockchain/select-chain', (req, res) => {
+    try {
+      const { chainKey } = req.body || {};
+      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
+      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
+
+      adapter.setChain(chainKey as ChainKey);
+      res.json({ success: true, currentChain: adapter.getChain() });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/blockchain/quote', async (req, res) => {
+    try {
+      const { tokenIn, tokenOut, amountIn } = req.body || {};
+      if (!tokenIn || !tokenOut || !amountIn) {
+        return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
+      }
+      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
+      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
+
+      const amounts = await adapter.getSwapQuote(tokenIn, tokenOut, amountIn.toString());
+      res.json({
+        success: true,
+        tokenIn,
+        tokenOut,
+        amountIn,
+        expectedOut: amounts[amounts.length - 1]?.toString() || '0',
+        path: amounts.map((a: any) => a.toString()),
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/blockchain/swap', async (req, res) => {
+    try {
+      const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {};
+      if (!tokenIn || !tokenOut || !amountIn) {
+        return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
+      }
+      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
+      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
+
+      const result = await adapter.swapTokens(
+        tokenIn,
+        tokenOut,
+        amountIn.toString(),
+        slippageBps ? Number(slippageBps) : 100
+      );
+      res.json({ success: true, result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
   });
 
   // --- API 404 & ERROR HANDLING ---

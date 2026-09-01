@@ -1,4 +1,15 @@
-export type BrokerId = 'binance' | 'mercado_bitcoin' | 'ibkr' | 'bybit';
+export type BrokerId =
+  | 'binance'
+  | 'mt5'
+  | 'ctrader'
+  | 'blockchain_evm'
+  | 'coinbase'
+  | 'metamask'
+  | 'mercado_bitcoin'
+  | 'ibkr'
+  | 'bybit'
+  | 'national_broker'
+  | 'paper';
 
 export type AccountType = 'demo' | 'real';
 
@@ -10,6 +21,7 @@ export interface Account {
   initialBalance: number;
   currentBalance: number;
   baseCurrency: 'BRL' | 'USD' | 'USDT';
+  walletAddress?: string;
   apiKeyEncrypted?: string;
   apiSecretEncrypted?: string;
   isActive: boolean;
@@ -40,19 +52,70 @@ export interface Trade {
   entryTime: string;
   closeTime?: string;
   exitTime?: string;
+  durationSeconds?: number;
+  clockHour?: string;
   botId?: string;
   botName?: string;
+  timeframe?: string;
+  auditCode?: string;
+  auditHash?: string;
+  auditStatus?: 'PENDING_CLOSE' | 'AUDITED_SEALED';
   notes?: string;
+}
+
+export interface HourlyBucket {
+  hourKey: string; // e.g. '2026-08-26 14:00'
+  displayHour: string; // e.g. '14:00 - 15:00'
+  tradeCount: number;
+  winCount: number;
+  lossCount: number;
+  pnlTotal: number;
+  pnlPercent: number;
+  winRate: number;
+  volumeTotal: number;
+  avgDurationSeconds: number;
+}
+
+export interface SessionStats {
+  sessionStartTime: number;
+  sessionStartedAt: string;
+  sessionSeconds: number;
+  isTimerRunning: boolean;
+  totalTrades: number;
+  closedTradesCount: number;
+  openTradesCount: number;
+  totalPnl: number;
+  tradesPerHour: number;
+  pnlPerHour: number;
+  winRate: number;
+  last1HourPnl: number;
+  last1HourTrades: number;
+  last1HourWinRate: number;
+  last4HoursPnl: number;
+  last4HoursTrades: number;
+  last24HoursPnl: number;
+  last24HoursTrades: number;
+  projected24hPnl: number;
+  projectedMonthlyPnl: number;
+  hourlyBuckets: HourlyBucket[];
+  dbPersistence: {
+    synced: boolean;
+    lastSaved: string;
+    totalRecords: number;
+    filePath: string;
+  };
 }
 
 export type StrategyId =
   | 'm1_pro'
-  | 'kronos_grid'
-  | 'quantum_entanglement'
-  | 'macd_cross'
   | 'quant_orb_15m'
   | 'orb_agentic_enhanced'
   | 'multi_agent_regime_desk'
+  | 'lumibot_signal_strategy'
+  | 'lumibot_killer_momentum_rsi'
+  | 'kronos_grid'
+  | 'quantum_entanglement'
+  | 'macd_cross'
   | 'kronos_scalp'
   | 'momentum'
   | 'grid'

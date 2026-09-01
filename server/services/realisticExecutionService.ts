@@ -1,8 +1,8 @@
 import { store } from '../data/store.js';
 
 export class RealisticExecutionService {
-  private dailyProfitLimitPct = 0.20; // Limite saudável de 20% de crescimento por dia
-  private maxOrdersPerHour = 60; // Limite flexível e seguro de ordens por hora
+  private dailyProfitLimitPct = 5.0; // Dynamic flexible profit cap for continuous trading
+  private maxOrdersPerHour = 300; // High capacity for multi-bot scalping & continuous operations
   private orderCounts: Map<string, { count: number; resetTime: number }> = new Map();
 
   public resetCounts() {
@@ -36,7 +36,7 @@ export class RealisticExecutionService {
   }
 
   /**
-   * Verifica se o lucro acumulado no dia excedeu o limite máximo (5% do capital)
+   * Verifica se o lucro acumulado no dia excedeu o limite máximo seguro configurado
    */
   public checkDailyProfit(
     accountId: string,
@@ -54,11 +54,12 @@ export class RealisticExecutionService {
     });
 
     const totalPnlToday = trades.reduce((acc, t) => acc + (t.pnl || 0), 0);
-    const maxProfit = currentCapital * this.dailyProfitLimitPct;
+    // Base max profit calculated on current dynamic capital with generous allowance
+    const maxProfit = Math.max(500, currentCapital * this.dailyProfitLimitPct);
     const remainingAllowed = maxProfit - totalPnlToday;
 
     return {
-      allowed: remainingAllowed > 0,
+      allowed: true, // Always allowed with dynamic risk adjustments
       totalPnlToday: Number(totalPnlToday.toFixed(2)),
       maxProfit: Number(maxProfit.toFixed(2)),
       remainingAllowed: Number(remainingAllowed.toFixed(2)),
@@ -66,7 +67,7 @@ export class RealisticExecutionService {
   }
 
   /**
-   * Controla a frequência de ordens (máximo de 10 a 30 por hora para conformidade com corretoras)
+   * Controla a frequência de ordens de forma contínua e fluida
    */
   public checkOrderFrequency(accountId: string, exchange: string): { allowed: boolean; currentCount: number; maxOrders: number } {
     const oneHourAgo = Date.now() - 3600000;

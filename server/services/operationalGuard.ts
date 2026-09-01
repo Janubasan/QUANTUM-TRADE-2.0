@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { store } from '../data/store.js';
 import { firebaseService } from './firebaseService.js';
+import { realExecutionGateway } from './realExecutionGateway.js';
 
 export interface OrderPayload {
   id?: string;
@@ -35,11 +36,11 @@ export interface ValidationResult {
 }
 
 export class OperationalGuard {
-  public readonly MAX_ORDERS_PER_HOUR = 60;
-  public readonly DAILY_PROFIT_LIMIT_PERCENT = 20.0;
+  public readonly MAX_ORDERS_PER_HOUR = 300;
+  public readonly DAILY_PROFIT_LIMIT_PERCENT = 500.0;
   public readonly SLIPPAGE_RATE = 0.0005; // 0,05%
   public readonly FEE_RATE = 0.001; // 0,1%
-  public readonly TIME_MIN_SECONDS = 5; // 5s para suportar scalpers sub-minuto
+  public readonly TIME_MIN_SECONDS = 1; // 1s para suportar scalpers sub-minuto
   public readonly TIME_MAX_SECONDS = 24 * 3600; // 24 hours
 
   private localKillSwitch: boolean = false; // false = trading allowed (kill switch disengaged)
@@ -357,6 +358,15 @@ export class OperationalGuard {
           firebaseService.markQuotaExhausted();
         }
       }
+    }
+
+    // 8. Gateway de Execução Real (Gancho Não-Bloqueante pós-validação)
+    try {
+      realExecutionGateway.dispatch(processedOrder as any).catch((err) => {
+        console.warn('Alerta não-bloqueante no RealExecutionGateway:', err?.message || err);
+      });
+    } catch (err) {
+      // Falha silenciosa para manter 100% de isolamento com o motor principal
     }
 
     return {

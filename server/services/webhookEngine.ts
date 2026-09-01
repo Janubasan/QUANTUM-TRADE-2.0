@@ -1,17 +1,20 @@
 import { store } from '../data/store.js';
 import { validateProfitRule } from '../engine/profitRule.js';
-import { Trade, WebhookAuditLog, Account } from '../../src/types.js';
-import { defaultSigner } from '../validation/signer.js';
-import { defaultVerifier } from '../validation/verifier.js';
+import { Trade, WebhookAuditLog } from '../../src/types.js';
+import { verifyHmacSignature } from './cryptoService.js';
+import { realExecutionGateway } from './realExecutionGateway.js';
 
 export interface SignalPayload {
-  secret: string;
+  secret?: string;
   symbol: string;
-  action: 'buy' | 'sell';
-  amount: number;
-  price: number;
-  timestamp: number; // Unix timestamp in seconds
-  order_id: string;
+  action: 'buy' | 'sell' | 'BUY' | 'SELL';
+  amount?: number;
+  price?: number;
+  timestamp?: number; // Unix timestamp in seconds
+  order_id?: string;
+  timeframe?: string;
+  riskPercent?: number;
+  notes?: string;
 }
 
 class WebhookEngine {
@@ -44,20 +47,28 @@ class WebhookEngine {
     );
   }
 
-  async processWebhook(payload: SignalPayload): Promise<{
+  async processWebhook(
+    payload: SignalPayload,
+    signatureHeader?: string
+  ): Promise<{
     processed: boolean;
     status: string;
     audit: WebhookAuditLog;
+    trade?: Trade;
   }> {
     const currentTimeSec = Math.floor(Date.now() / 1000);
-    const latencyMs = Math.max(0, Math.abs(currentTimeSec - (payload.timestamp || currentTimeSec)) * 1000);
+    const signalTimestamp = payload.timestamp || currentTimeSec;
+    const latencyMs = Math.max(0, Math.abs(currentTimeSec - signalTimestamp) * 1000);
 
     const auditId = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const normalizedSymbol = payload.symbol ? payload.symbol.toUpperCase().replace('_', '/') : 'BTC/BRL';
+    const normalizedSymbol = payload.symbol ? payload.symbol.toUpperCase().replace('_', '/') : 'BTC/USDT';
     const action = (payload.action || 'buy').toLowerCase() as 'buy' | 'sell';
 
-    // 1. Authenticate Secret Key
-    if (payload.secret !== this.secretKey) {
+    // 1. Authenticate Secret Key or HMAC Signature
+    const isSecretValid = payload.secret === this.secretKey;
+    const isHmacValid = signatureHeader ? verifyHmacSignature(payload, signatureHeader, this.secretKey) : false;
+
+    if (!isSecretValid && !isHmacValid) {
       const audit: WebhookAuditLog = {
         id: auditId,
         orderId: payload.order_id || 'UNKNOWN',
@@ -69,11 +80,11 @@ class WebhookEngine {
         status: 'AUTH_FAILED',
         brokerAccount: 'N/A',
         accountType: 'demo',
-        reason: '[SECURITY REJECTED] Secret de autenticação do webhook inválido.',
+        reason: '[SECURITY REJECTED] Secret ou assinatura HMAC de autenticação do webhook inválido.',
         timestamp: new Date().toISOString(),
       };
       store.addWebhookAudit(audit);
-      store.addLog('ERROR', `[SECURITY] Tentativa de acesso não autorizada ao Webhook. Secret inválido. ID: ${payload.order_id}`);
+      store.addLog('ERROR', `[SECURITY] Tentativa de acesso não autorizada ao Webhook. Secret/HMAC inválido. ID: ${payload.order_id}`);
       return { processed: false, status: 'AUTH_FAILED', audit };
     }
 
@@ -100,14 +111,13 @@ class WebhookEngine {
 
     if (payload.order_id) {
       this.seenOrderIds.add(payload.order_id);
-      // Clean old order IDs if set grows too large
       if (this.seenOrderIds.size > 1000) {
         this.seenOrderIds.clear();
       }
     }
 
-    // 3. Stale Signal Check (Threshold: max 5 seconds delay)
-    if (Math.abs(currentTimeSec - payload.timestamp) > 5) {
+    // 3. Stale Signal Check (Threshold: max 10 seconds delay)
+    if (Math.abs(currentTimeSec - signalTimestamp) > 10) {
       const audit: WebhookAuditLog = {
         id: auditId,
         orderId: payload.order_id || `TV-${Date.now()}`,
@@ -119,7 +129,7 @@ class WebhookEngine {
         status: 'REJECTED_STALE',
         brokerAccount: 'N/A',
         accountType: 'demo',
-        reason: `[AUDIT REJECTED] Sinal expirado/ruído de mercado (Latência: ${latencyMs}ms > 5000ms).`,
+        reason: `[AUDIT REJECTED] Sinal expirado (Latência: ${latencyMs}ms > 10000ms).`,
         timestamp: new Date().toISOString(),
       };
       store.addWebhookAudit(audit);
@@ -127,16 +137,16 @@ class WebhookEngine {
       return { processed: false, status: 'REJECTED_STALE', audit };
     }
 
-    // 4. Market Price Lookup & Slippage Control (Max 0.5%)
+    // 4. Market Price Lookup & Slippage Control (Max 0.8%)
     const state = store.getState();
-    const ticker = state.tickers[normalizedSymbol] || state.tickers['BTC/BRL'] || state.tickers['BTC/USDT'];
+    const ticker = state.tickers[normalizedSymbol] || state.tickers['BTC/USDT'] || state.tickers['BTC/BRL'];
     const currentMarketPrice = ticker ? ticker.price : (payload.price || 100);
     const signalPrice = payload.price || currentMarketPrice;
 
     const slippageRatio = Math.abs(currentMarketPrice - signalPrice) / (signalPrice || 1);
     const slippagePercent = Number((slippageRatio * 100).toFixed(3));
 
-    if (slippageRatio > 0.005) { // 0.5% max slippage
+    if (slippageRatio > 0.008) { // 0.8% max slippage
       const audit: WebhookAuditLog = {
         id: auditId,
         orderId: payload.order_id || `TV-${Date.now()}`,
@@ -150,7 +160,7 @@ class WebhookEngine {
         status: 'REJECTED_SLIPPAGE',
         brokerAccount: 'N/A',
         accountType: 'demo',
-        reason: `[AUDIT REJECTED] Slippage excessivo (${slippagePercent}% > 0.50%). Preço Sinal: ${signalPrice}, Mercado: ${currentMarketPrice}.`,
+        reason: `[AUDIT REJECTED] Slippage excessivo (${slippagePercent}% > 0.80%). Preço Sinal: ${signalPrice}, Mercado: ${currentMarketPrice}.`,
         timestamp: new Date().toISOString(),
       };
       store.addWebhookAudit(audit);
@@ -180,8 +190,9 @@ class WebhookEngine {
       return { processed: false, status: 'ERROR', audit };
     }
 
-    // Validate Profit Rule / Available Risk
-    const validation = validateProfitRule(activeAccount, 0.5);
+    // 6. Validate Profit Rule / Available Risk
+    const riskPct = payload.riskPercent || 0.5;
+    const validation = validateProfitRule(activeAccount, riskPct);
 
     // Compute TP / SL
     const isLong = action === 'buy';
@@ -207,10 +218,29 @@ class WebhookEngine {
       pnl: 0,
       pnlPercent: 0,
       entryTime: new Date().toISOString(),
-      notes: `Ordem executada via Webhook TV (${payload.order_id}). Latência: ${latencyMs}ms, Slippage: ${slippagePercent}%`,
+      timeframe: payload.timeframe || '15m',
+      notes: payload.notes || `Ordem via Webhook/Bridge (${payload.order_id || 'EXT'}). Latência: ${latencyMs}ms, Slippage: ${slippagePercent}%`,
     };
 
     store.addTrade(executedTrade);
+
+    // 7. Dispatch directly to RealExecutionGateway (MT5, Binance, cTrader, etc.)
+    realExecutionGateway
+      .dispatch({
+        id: executedTrade.id,
+        account_id: activeAccount.id,
+        symbol: normalizedSymbol,
+        side: isLong ? 'BUY' : 'SELL',
+        quantity,
+        price: currentMarketPrice,
+        tpPrice,
+        slPrice,
+        order_hash: payload.order_id || executedTrade.id,
+        created_at: new Date().toISOString(),
+      })
+      .catch((e) => {
+        console.warn('[WebhookEngine] RealExecutionGateway dispatch notice:', e.message);
+      });
 
     const audit: WebhookAuditLog = {
       id: auditId,
@@ -232,11 +262,11 @@ class WebhookEngine {
     store.addWebhookAudit(audit);
     store.addLog(
       'TRADE',
-      `[WEBHOOK TV EXECUTION] Ordem ${direction} ${normalizedSymbol} executada na conta ${activeAccount.name}. Latência: ${latencyMs}ms.`,
+      `[WEBHOOK/BRIDGE EXECUTION] Ordem ${direction} ${normalizedSymbol} executada na conta ${activeAccount.name}. Latência: ${latencyMs}ms.`,
       { orderId: payload.order_id, price: currentMarketPrice }
     );
 
-    return { processed: true, status: 'EXECUTED', audit };
+    return { processed: true, status: 'EXECUTED', audit, trade: executedTrade };
   }
 }
 

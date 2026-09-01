@@ -10,6 +10,9 @@ import {
   Key,
   X,
   CheckCircle,
+  Copy,
+  Check,
+  Coins,
 } from 'lucide-react';
 
 interface AccountsViewProps {
@@ -20,18 +23,33 @@ interface AccountsViewProps {
 export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
-  const [broker, setBroker] = useState<BrokerId>('binance');
-  const [type, setType] = useState<AccountType>('demo');
+  const [broker, setBroker] = useState<BrokerId>('coinbase');
+  const [type, setType] = useState<AccountType>('real');
   const [initialBalance, setInitialBalance] = useState<number>(100);
+  const [walletAddress, setWalletAddress] = useState('3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const brokerLabels: Record<BrokerId, { name: string; color: string }> = {
-    binance: { name: 'Binance (Spot & Futures)', color: 'border-amber-500/40 text-amber-400 bg-amber-500/10' },
-    mercado_bitcoin: { name: 'Mercado Bitcoin (BRL v4)', color: 'border-blue-500/40 text-blue-400 bg-blue-500/10' },
+    binance: { name: 'Binance (Spot & Futures CCXT)', color: 'border-amber-500/40 text-amber-400 bg-amber-500/10' },
+    mt5: { name: 'MetaTrader 5 (JOAT Python Bridge)', color: 'border-blue-500/40 text-blue-400 bg-blue-500/10' },
+    ctrader: { name: 'cTrader Open API (IC Markets)', color: 'border-cyan-500/40 text-cyan-400 bg-cyan-500/10' },
+    blockchain_evm: { name: 'Direct EVM Blockchain (7 Chains DEX)', color: 'border-purple-500/40 text-purple-400 bg-purple-500/10' },
+    coinbase: { name: 'Coinbase (Bitcoin & Vault)', color: 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10' },
+    metamask: { name: 'MetaMask (Web3 DeFi Wallet)', color: 'border-orange-500/40 text-orange-400 bg-orange-500/10' },
+    national_broker: { name: 'B3 Brasil (XP / Genial / Clear)', color: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' },
+    mercado_bitcoin: { name: 'Mercado Bitcoin (BRL v4)', color: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' },
     ibkr: { name: 'Interactive Brokers (IBKR)', color: 'border-rose-500/40 text-rose-400 bg-rose-500/10' },
     bybit: { name: 'Bybit Derivatives', color: 'border-purple-500/40 text-purple-400 bg-purple-500/10' },
+    paper: { name: 'Quantum Paper Sim', color: 'border-zinc-500/40 text-zinc-300 bg-zinc-500/10' },
+  };
+
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -39,10 +57,11 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
     setIsSubmitting(true);
     try {
       await createAccount({
-        name,
+        name: name || (broker === 'coinbase' ? 'Coinbase Bitcoin Vault' : `Conta ${broker.toUpperCase()}`),
         broker,
         type,
         initialBalance,
+        walletAddress: walletAddress || (broker === 'coinbase' ? '3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv' : undefined),
         apiKeyEncrypted: apiKey,
         apiSecretEncrypted: apiSecret,
       });
@@ -85,10 +104,10 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2 tracking-tight">
             <Wallet className="w-5 h-5 text-cyan-400" />
-            Gerenciamento de Contas Multi-Broker
+            Gerenciamento de Contas Multi-Broker & Carteiras Crypto
           </h2>
           <p className="text-xs text-white/40 mt-1">
-            Conecte suas contas Demo e Reais em corretoras nacionais e internacionais.
+            Conecte suas contas Coinbase, Binance, Mercado Bitcoin e endereços Bitcoin auditados.
           </p>
         </div>
 
@@ -96,7 +115,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
           onClick={() => setIsModalOpen(true)}
           className="px-5 py-3 rounded-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs font-mono uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.4)] transition"
         >
-          <Plus className="w-4 h-4" /> Nova Conta
+          <Plus className="w-4 h-4" /> Nova Conta / Carteira
         </button>
       </div>
 
@@ -104,7 +123,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {accounts.map((acc) => {
           const profit = acc.currentBalance - acc.initialBalance;
-          const brokerInfo = brokerLabels[acc.broker] || brokerLabels.binance;
+          const brokerInfo = brokerLabels[acc.broker] || brokerLabels.coinbase;
 
           return (
             <div
@@ -153,6 +172,31 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                   </div>
                 </div>
 
+                {/* Bitcoin Wallet Address Badge if present */}
+                {acc.walletAddress && (
+                  <div className="mt-4 p-3 rounded-2xl bg-black/60 border border-amber-500/30 text-[11px] font-mono text-amber-300 space-y-1">
+                    <div className="flex items-center justify-between text-white/50 text-[10px]">
+                      <span className="flex items-center gap-1 text-amber-400 font-bold">
+                        <Coins className="w-3.5 h-3.5" /> Endereço Bitcoin (BTC):
+                      </span>
+                      <button
+                        onClick={() => handleCopy(acc.walletAddress!, acc.id)}
+                        className="hover:text-white transition flex items-center gap-1 cursor-pointer text-[10px]"
+                        title="Copiar Endereço"
+                      >
+                        {copiedId === acc.id ? (
+                          <span className="text-emerald-400 flex items-center gap-0.5"><Check className="w-3 h-3" /> Copiado</span>
+                        ) : (
+                          <span className="flex items-center gap-0.5"><Copy className="w-3 h-3" /> Copiar</span>
+                        )}
+                      </button>
+                    </div>
+                    <div className="text-[11px] text-white font-mono break-all bg-black/50 p-1.5 rounded-lg border border-white/5">
+                      {acc.walletAddress}
+                    </div>
+                  </div>
+                )}
+
                 {/* Credentials Badge */}
                 {acc.apiKeyEncrypted && (
                   <div className="mt-4 p-3 rounded-2xl bg-black/40 border border-white/5 text-[11px] font-mono text-white/50 flex items-center gap-2">
@@ -193,7 +237,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
       {/* New Account Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#09090d] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-4">
+          <div className="bg-[#09090d] border border-white/10 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-5 right-5 text-white/40 hover:text-white cursor-pointer"
@@ -202,7 +246,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
             </button>
 
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-cyan-400" /> Adicionar Conta Multi-Broker
+              <Plus className="w-5 h-5 text-cyan-400" /> Adicionar Conta Multi-Broker & Wallet
             </h3>
 
             <form onSubmit={handleCreateAccount} className="space-y-4 text-xs font-mono">
@@ -210,8 +254,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                 <label className="text-white/50 block mb-1">Nome da Conta</label>
                 <input
                   type="text"
-                  required
-                  placeholder="Ex: Minha Conta Binance Real"
+                  placeholder="Ex: Coinbase Pro Bitcoin Vault"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
@@ -220,16 +263,23 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-white/50 block mb-1">Corretora</label>
+                  <label className="text-white/50 block mb-1">Corretora / Wallet</label>
                   <select
                     value={broker}
                     onChange={(e) => setBroker(e.target.value as BrokerId)}
                     className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
                   >
-                    <option value="binance" className="bg-zinc-900">Binance</option>
-                    <option value="mercado_bitcoin" className="bg-zinc-900">Mercado Bitcoin</option>
+                    <option value="binance" className="bg-zinc-900">Binance (Spot & Futures)</option>
+                    <option value="mt5" className="bg-zinc-900">MetaTrader 5 (JOAT Bridge)</option>
+                    <option value="ctrader" className="bg-zinc-900">cTrader Open API</option>
+                    <option value="blockchain_evm" className="bg-zinc-900">Direct EVM Blockchain (7 Chains DEX)</option>
+                    <option value="coinbase" className="bg-zinc-900">Coinbase (BTC Vault)</option>
+                    <option value="metamask" className="bg-zinc-900">MetaMask (Web3 DeFi)</option>
+                    <option value="national_broker" className="bg-zinc-900">B3 Brasil (XP / Genial)</option>
+                    <option value="mercado_bitcoin" className="bg-zinc-900">Mercado Bitcoin (BRL)</option>
                     <option value="ibkr" className="bg-zinc-900">Interactive Brokers</option>
-                    <option value="bybit" className="bg-zinc-900">Bybit</option>
+                    <option value="bybit" className="bg-zinc-900">Bybit Derivatives</option>
+                    <option value="paper" className="bg-zinc-900">Quantum Paper (Simulado)</option>
                   </select>
                 </div>
 
@@ -241,18 +291,29 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                       const t = e.target.value as AccountType;
                       setType(t);
                       if (t === 'demo') setInitialBalance(100);
-                      else setInitialBalance(500);
+                      else setInitialBalance(100);
                     }}
                     className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
                   >
+                    <option value="real" className="bg-zinc-900">Real (Corretora / Carteira)</option>
                     <option value="demo" className="bg-zinc-900">Demo (Simulada)</option>
-                    <option value="real" className="bg-zinc-900">Real (Corretora)</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-white/50 block mb-1">Saldo Inicial (BRL/USDT)</label>
+                <label className="text-white/50 block mb-1">Endereço Bitcoin (BTC Wallet)</label>
+                <input
+                  type="text"
+                  placeholder="Ex: 3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv"
+                  value={walletAddress}
+                  onChange={(e) => setWalletAddress(e.target.value)}
+                  className="w-full bg-black/50 border border-amber-500/30 text-amber-300 rounded-2xl p-3 outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-white/50 block mb-1">Saldo Inicial ($ USD)</label>
                 <input
                   type="number"
                   required
@@ -265,7 +326,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
               {type === 'real' && (
                 <div className="space-y-3 pt-2 border-t border-white/10">
                   <div>
-                    <label className="text-white/50 block mb-1">API Key</label>
+                    <label className="text-white/50 block mb-1">API Key (Opcional)</label>
                     <input
                       type="text"
                       placeholder="Sua API Key da Corretora"
@@ -276,7 +337,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                   </div>
 
                   <div>
-                    <label className="text-white/50 block mb-1">API Secret</label>
+                    <label className="text-white/50 block mb-1">API Secret (Opcional)</label>
                     <input
                       type="password"
                       placeholder="Seu API Secret (Criptografado AES-256)"

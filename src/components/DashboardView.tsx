@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Account, Trade, Ticker } from '../types';
 import { KillSwitchGuardCard } from './KillSwitchGuardCard';
 import { Runner247FirebaseCard } from './Runner247FirebaseCard';
 import { OperationalGuardCard } from './OperationalGuardCard';
+import { TradingClockAndResetCard } from './TradingClockAndResetCard';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -23,8 +24,10 @@ import {
   XCircle,
   AlertCircle,
   Zap,
+  Lock,
+  CheckCircle2,
 } from 'lucide-react';
-import { createManualTrade, closeTrade } from '../services/api';
+import { createManualTrade, closeTrade, fetchSchedulerState, updateSchedulerMode } from '../services/api';
 
 interface DashboardViewProps {
   account: Account;
@@ -48,9 +51,44 @@ export function DashboardView({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
 
+  // Scalp Mode Toggle State
+  const [schedulerMode, setSchedulerMode] = useState<'scalp' | 'normal'>('normal');
+  const [isTogglingMode, setIsTogglingMode] = useState<boolean>(false);
+  const [modeMessage, setModeMessage] = useState<string | null>(null);
+
   const [activeTradesFilter, setActiveTradesFilter] = useState<'account' | 'all'>('all');
 
   const ticker = tickers[selectedSymbol] || tickers['BTC/BRL'];
+
+  useEffect(() => {
+    fetchSchedulerState()
+      .then((res) => {
+        if (res && res.mode) {
+          setSchedulerMode(res.mode);
+        }
+      })
+      .catch((err) => console.error('Erro ao carregar scheduler state:', err));
+  }, []);
+
+  const handleToggleScalpMode = async () => {
+    const nextMode = schedulerMode === 'scalp' ? 'normal' : 'scalp';
+    setIsTogglingMode(true);
+    try {
+      const res = await updateSchedulerMode(nextMode);
+      setSchedulerMode(res.mode);
+      setModeMessage(
+        nextMode === 'scalp'
+          ? '⚡ Modo Scalp ATIVADO manualmente por botão (Permite operações ultra-rápidas).'
+          : '🛡️ Modo Padrão Auditado ATIVADO (Apenas timeframes 1m, 5m, 10m, 15m, 30m, 1h).'
+      );
+      onRefreshData();
+    } catch (err: unknown) {
+      console.error('Falha ao alternar modo scalp:', err);
+    } finally {
+      setIsTogglingMode(false);
+      setTimeout(() => setModeMessage(null), 5000);
+    }
+  };
 
   // Calculate profit rule values
   const profit = account.currentBalance - account.initialBalance;
@@ -119,6 +157,95 @@ export function DashboardView({
 
   return (
     <div className="space-y-6">
+      {/* Live Trading Clock, Session Timer & 100 Account Reset */}
+      <TradingClockAndResetCard
+        accountId={account.id}
+        accountName={account.name}
+        initialBalance={account.initialBalance}
+        currentBalance={account.currentBalance}
+        trades={trades}
+        onResetComplete={onRefreshData}
+      />
+
+      {/* Audited Timeframe Gate & Scalp Button Controller Bar */}
+      <div className="bg-gradient-to-r from-zinc-950 via-zinc-900/90 to-zinc-950 border border-white/10 rounded-3xl p-5 shadow-2xl space-y-3 relative overflow-hidden">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-bold text-white font-mono">
+                  Validação de Operações Auditadas & Controle de Scalp
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  AUTO-ID LIGADO
+                </span>
+              </div>
+              <p className="text-xs text-white/50 mt-0.5">
+                Timeframes com auditoria automática e código espelhado: <span className="text-cyan-300 font-bold font-mono">1m, 5m, 10m, 15m, 30m, 1h</span>.
+                O lucro/PnL só é revelado após a conclusão e selagem auditada da ordem.
+              </p>
+            </div>
+          </div>
+
+          {/* Scalp Mode Manual Button Switch */}
+          <div className="flex items-center gap-3 bg-black/60 border border-white/10 p-2 rounded-2xl shrink-0">
+            <div className="text-right">
+              <div className="text-[10px] text-white/40 uppercase font-mono tracking-wider">Modo Scalp (Manual)</div>
+              <div className={`text-xs font-mono font-bold ${schedulerMode === 'scalp' ? 'text-amber-400' : 'text-cyan-400'}`}>
+                {schedulerMode === 'scalp' ? 'LIGADO (Micro-Scalp)' : 'DESLIGADO (Apenas Auditadas)'}
+              </div>
+            </div>
+
+            <button
+              onClick={handleToggleScalpMode}
+              disabled={isTogglingMode}
+              className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition flex items-center gap-2 cursor-pointer shadow-lg ${
+                schedulerMode === 'scalp'
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
+                  : 'bg-zinc-800 hover:bg-zinc-700 text-white border border-white/10'
+              }`}
+            >
+              <Zap className={`w-3.5 h-3.5 ${schedulerMode === 'scalp' ? 'fill-black' : 'text-amber-400'}`} />
+              <span>{schedulerMode === 'scalp' ? 'Desligar Scalp' : 'Ligar Scalp (Botão)'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Timeframe Badges Row */}
+        <div className="pt-2 border-t border-white/5 flex items-center justify-between flex-wrap gap-2 text-[11px] font-mono">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-white/40">Timeframes Permitidos:</span>
+            {['1m', '5m', '10m', '15m', '30m', '1h'].map((tf) => (
+              <span
+                key={tf}
+                className="px-2.5 py-0.5 rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold"
+              >
+                {tf}
+              </span>
+            ))}
+            {schedulerMode === 'scalp' && (
+              <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold animate-pulse">
+                + Scalp (5s, 15s, 30s)
+              </span>
+            )}
+          </div>
+
+          <div className="text-white/50 text-[10px] flex items-center gap-1">
+            <Lock className="w-3 h-3 text-cyan-400" /> PnL Oculto durante execução • Selo Criptográfico no fechamento
+          </div>
+        </div>
+
+        {modeMessage && (
+          <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-xs font-mono text-cyan-300 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>{modeMessage}</span>
+          </div>
+        )}
+      </div>
+
       {/* 24/7 Autonomous Runner & Firebase Firestore Cloud Persistence */}
       <Runner247FirebaseCard onRefresh={onRefreshData} />
 
@@ -212,7 +339,7 @@ export function DashboardView({
             </span>
           </div>
           <div className="mt-3 text-[11px] text-white/60 font-mono">
-            Risco (0.5%): R$ {riskAmount.toFixed(2)} | Lucro: R$ {profit.toFixed(2)}
+            Risco ({riskPercent}%): $ {riskAmount.toFixed(2)} USD | Lucro: $ {profit.toFixed(2)} USD
           </div>
         </div>
       </div>
@@ -289,9 +416,9 @@ export function DashboardView({
                   fillOpacity={1}
                   fill="url(#chartGradient)"
                 />
-                {activeTrades.map((t) => (
+                {activeTrades.map((t, idx) => (
                   <ReferenceLine
-                    key={t.id}
+                    key={`refline-${t.id}-${idx}`}
                     y={t.entryPrice}
                     stroke={t.direction === 'LONG' ? '#10b981' : '#f43f5e'}
                     strokeDasharray="4 4"
@@ -400,13 +527,13 @@ export function DashboardView({
             {/* Profit Guard Box */}
             <div className="mt-4 p-4 rounded-2xl bg-black/40 border border-white/5 text-xs font-mono space-y-2">
               <div className="flex justify-between text-white/50">
-                <span>Risco em R$:</span>
-                <span className="text-white font-bold">R$ {riskAmount.toFixed(2)}</span>
+                <span>Risco em $:</span>
+                <span className="text-white font-bold">$ {riskAmount.toFixed(2)} USD</span>
               </div>
               <div className="flex justify-between text-white/50">
                 <span>Lucro Disponível:</span>
                 <span className={profit >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                  R$ {profit.toFixed(2)}
+                  $ {profit.toFixed(2)} USD
                 </span>
               </div>
               <div className="pt-2 border-t border-white/5 flex items-center justify-between">
@@ -440,14 +567,14 @@ export function DashboardView({
         </div>
       </div>
 
-      {/* Active Trades Table */}
+      {/* Active Trades Table with Scrollbars & Mirrored Audit Status */}
       <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 shadow-2xl">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/5">
           <div className="flex items-center gap-3">
             <h3 className="font-bold text-white text-base flex items-center gap-2">
               Posições Abertas ({activeTrades.length})
             </h3>
-            <span className="text-xs text-white/40">Monitoradas em Tempo Real</span>
+            <span className="text-xs text-white/40">Auditadas com Código Espelhado</span>
           </div>
 
           <div className="flex items-center gap-2 bg-black/40 p-1 rounded-xl border border-white/5 text-xs font-mono">
@@ -476,34 +603,47 @@ export function DashboardView({
 
         {activeTrades.length === 0 ? (
           <div className="py-8 text-center text-xs text-white/40 font-mono">
-            Nenhuma posição aberta no momento. Os robôs ativos estão avaliando o mercado.
+            Nenhuma posição aberta no momento. Os robôs nos timeframes auditados (1m, 5m, 10m, 15m, 30m, 1h) estão analisando o mercado.
           </div>
         ) : (
-          <div className="overflow-x-auto mt-3">
+          <div className="overflow-x-auto overflow-y-auto max-h-96 custom-scrollbar mt-3">
             <table className="w-full text-left text-xs font-mono">
-              <thead>
+              <thead className="sticky top-0 bg-[#0c0d12] z-10">
                 <tr className="text-white/40 border-b border-white/5">
-                  <th className="pb-3 font-medium">Ativo</th>
-                  <th className="pb-3 font-medium">Direção</th>
-                  <th className="pb-3 font-medium">Preço Entrada</th>
-                  <th className="pb-3 font-medium">Preço Atual</th>
-                  <th className="pb-3 font-medium">Take Profit</th>
-                  <th className="pb-3 font-medium">Stop Loss</th>
-                  <th className="pb-3 font-medium">PnL (%)</th>
-                  <th className="pb-3 font-medium">Origem</th>
-                  <th className="pb-3 font-medium text-right">Ação</th>
+                  <th className="pb-3 pt-2 font-medium">ID & Código Auditado</th>
+                  <th className="pb-3 pt-2 font-medium">Ativo / Timeframe</th>
+                  <th className="pb-3 pt-2 font-medium">Direção</th>
+                  <th className="pb-3 pt-2 font-medium">Preço Entrada</th>
+                  <th className="pb-3 pt-2 font-medium">Preço Atual</th>
+                  <th className="pb-3 pt-2 font-medium">TP / SL</th>
+                  <th className="pb-3 pt-2 font-medium">Lucro / PnL Auditado</th>
+                  <th className="pb-3 pt-2 font-medium">Origem</th>
+                  <th className="pb-3 pt-2 font-medium text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {activeTrades.map((t) => {
+                {activeTrades.map((t, idx) => {
                   const isLong = t.direction === 'LONG';
-                  const isProfit = t.pnl >= 0;
                   const isBrl = t.symbol.includes('BRL');
                   const currSym = isBrl ? 'R$' : '$';
+                  const auditCode = t.auditCode || `AUD-${(t.timeframe || '15M').toUpperCase()}-${t.id.slice(-6).toUpperCase()}`;
 
                   return (
-                    <tr key={t.id} className="hover:bg-white/5 transition">
-                      <td className="py-3.5 font-bold text-white">{t.symbol}</td>
+                    <tr key={`${t.id}-${idx}`} className="hover:bg-white/5 transition">
+                      <td className="py-3.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold">
+                            {auditCode}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-white/30 truncate block max-w-[110px] mt-0.5">{t.id}</span>
+                      </td>
+                      <td className="py-3.5">
+                        <span className="font-bold text-white block">{t.symbol}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60">
+                          {t.timeframe || '15m'}
+                        </span>
+                      </td>
                       <td className="py-3.5">
                         <span
                           className={`px-2.5 py-0.5 rounded-full text-[10px] uppercase font-bold ${
@@ -517,11 +657,16 @@ export function DashboardView({
                       </td>
                       <td className="py-3.5 text-white/70">{currSym} {t.entryPrice.toFixed(2)}</td>
                       <td className="py-3.5 text-cyan-300 font-bold">{currSym} {t.currentPrice.toFixed(2)}</td>
-                      <td className="py-3.5 text-emerald-400">{currSym} {t.tpPrice.toFixed(2)}</td>
-                      <td className="py-3.5 text-rose-400">{currSym} {t.slPrice.toFixed(2)}</td>
-                      <td className={`py-3.5 font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {isProfit ? '+' : ''}
-                        {t.pnlPercent.toFixed(2)}% ({currSym} {t.pnl.toFixed(2)})
+                      <td className="py-3.5 text-[11px]">
+                        <span className="text-emerald-400 block">TP: {currSym} {t.tpPrice.toFixed(2)}</span>
+                        <span className="text-rose-400 block">SL: {currSym} {t.slPrice.toFixed(2)}</span>
+                      </td>
+                      <td className="py-3.5 font-bold">
+                        {/* PnL is hidden for open trades and only revealed after close as per user directive */}
+                        <div className="flex items-center gap-1.5 text-amber-300/90 text-[11px] bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20">
+                          <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>Auditado (Revela ao fechar)</span>
+                        </div>
                       </td>
                       <td className="py-3.5 text-white/50">{t.botName || 'Manual'}</td>
                       <td className="py-3.5 text-right">
@@ -529,7 +674,7 @@ export function DashboardView({
                           onClick={() => handleClosePosition(t.id)}
                           className="px-3 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[11px] font-semibold flex items-center gap-1 ml-auto cursor-pointer"
                         >
-                          <XCircle className="w-3.5 h-3.5" /> Encerrar
+                          <XCircle className="w-3.5 h-3.5" /> Fechar & Auditar
                         </button>
                       </td>
                     </tr>

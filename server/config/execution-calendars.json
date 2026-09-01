@@ -1,0 +1,117 @@
+{
+  "markets": {
+    "crypto": {
+      "name": "Mercado Cripto Global (24/7)",
+      "timezone": "UTC",
+      "sessions": ["00:00-23:59"],
+      "days": [0, 1, 2, 3, 4, 5, 6],
+      "holidays": [],
+      "defaultBroker": "coinbase"
+    },
+    "B3": {
+      "name": "B3 - Brasil, Bolsa, Balcão",
+      "timezone": "America/Sao_Paulo",
+      "sessions": ["10:00-17:00"],
+      "preMarket": ["09:45-10:00"],
+      "afterMarket": ["17:30-18:00"],
+      "days": [1, 2, 3, 4, 5],
+      "holidays": [
+        "2026-01-01",
+        "2026-02-16",
+        "2026-02-17",
+        "2026-04-03",
+        "2026-04-21",
+        "2026-05-01",
+        "2026-06-04",
+        "2026-07-09",
+        "2026-09-07",
+        "2026-10-12",
+        "2026-11-02",
+        "2026-11-15",
+        "2026-11-20",
+        "2026-12-25",
+        "2026-12-31"
+      ],
+      "defaultBroker": "national_broker"
+    },
+    "NYSE_NASDAQ": {
+      "name": "Bolsa de Nova York & Nasdaq (EUA)",
+      "timezone": "America/New_York",
+      "sessions": ["09:30-16:00"],
+      "preMarket": ["04:00-09:30"],
+      "afterMarket": ["16:00-20:00"],
+      "days": [1, 2, 3, 4, 5],
+      "holidays": [
+        "2026-01-01",
+        "2026-01-19",
+        "2026-02-16",
+        "2026-04-03",
+        "2026-05-25",
+        "2026-06-19",
+        "2026-07-03",
+        "2026-09-07",
+        "2026-11-26",
+        "2026-12-25"
+      ],
+      "defaultBroker": "coinbase"
+    },
+    "FOREX": {
+      "name": "Mercado Forex Global",
+      "timezone": "UTC",
+      "sessions": ["00:00-23:59"],
+      "days": [1, 2, 3, 4, 5],
+      "holidays": ["2026-01-01", "2026-12-25"],
+      "defaultBroker": "paper"
+    }
+  },
+  "instruments": {
+    "BTC/USDT": {
+      "market": "crypto",
+      "broker": "coinbase",
+      "minNotional": 5.0,
+      "tickSize": 0.01
+    },
+    "ETH/USDT": {
+      "market": "crypto",
+      "broker": "coinbase",
+      "minNotional": 5.0,
+      "tickSize": 0.01
+    },
+    "SOL/USDT": {
+      "market": "crypto",
+      "broker": "coinbase",
+      "minNotional": 5.0,
+      "tickSize": 0.01
+    },
+    "PETR4": {
+      "market": "B3",
+      "broker": "national_broker",
+      "minNotional": 100.0,
+      "tickSize": 0.01
+    },
+    "VALE3": {
+      "market": "B3",
+      "broker": "national_broker",
+      "minNotional": 100.0,
+      "tickSize": 0.01
+    },
+    "WIN": {
+      "market": "B3",
+      "broker": "national_broker",
+      "minNotional": 1.0,
+      "tickSize": 5.0
+    },
+    "WDO": {
+      "market": "B3",
+      "broker": "national_broker",
+      "minNotional": 1.0,
+      "tickSize": 0.5
+    },
+    "ETH_DEFI": {
+      "market": "crypto",
+      "broker": "metamask",
+      "minNotional": 10.0,
+      "tickSize": 0.0001
+    }
+  }
+}

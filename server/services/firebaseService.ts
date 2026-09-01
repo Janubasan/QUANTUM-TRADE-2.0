@@ -14,9 +14,8 @@ let firebaseInitialized = false;
 let lastSyncTimestamp: string | null = null;
 let syncCount = 0;
 let syncError: string | null = null;
-// Default to active quota protection (cooldown 12 hours) when quota limit has been hit
-let isQuotaExhausted = true;
-let quotaCooldownUntil = Date.now() + 12 * 3600 * 1000;
+let isQuotaExhausted = false;
+let quotaCooldownUntil = 0;
 
 export class FirebaseService {
   private config: any = null;
@@ -39,7 +38,7 @@ export class FirebaseService {
         this.config.firestoreDatabaseId || undefined
       );
       firebaseInitialized = true;
-      console.log('🔥 [Firebase] Firestore conectado com salvaguarda de quota ativa para:', this.config.projectId);
+      console.log('🔥 [Firebase] Firestore conectado com sucesso para:', this.config.projectId);
     } catch (err: any) {
       console.warn('⚠️ [Firebase] Inicialização Firestore operando em modo local:', err.message);
       syncError = err.message;
@@ -77,6 +76,75 @@ export class FirebaseService {
         : syncError,
       quotaExhausted: isUnderQuotaCooldown,
     };
+  }
+
+  /**
+   * Salva o estado consolidado da plataforma no Firestore (Cloud Persistence)
+   */
+  public async savePlatformVault(data: {
+    accounts: Account[];
+    bots: Bot[];
+    trades: Trade[];
+    sessionInfo: any;
+    logs: any[];
+  }): Promise<boolean> {
+    if (!this.isReady() || this.isQuotaLimited()) {
+      return false;
+    }
+
+    try {
+      const vaultRef = doc(dbInstance, 'config', 'persistent_vault');
+      await setDoc(
+        vaultRef,
+        {
+          accounts: data.accounts,
+          bots: data.bots,
+          trades: data.trades.slice(0, 1000),
+          sessionInfo: data.sessionInfo,
+          logs: data.logs.slice(0, 100),
+          currency: 'USD',
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      lastSyncTimestamp = new Date().toISOString();
+      syncCount += 1;
+      syncError = null;
+      return true;
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('Quota limit')) {
+        this.markQuotaExhausted();
+      } else {
+        syncError = errMsg;
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Carrega o estado persistente do Firestore se disponível
+   */
+  public async loadPlatformVault(): Promise<any | null> {
+    if (!this.isReady() || this.isQuotaLimited()) {
+      return null;
+    }
+
+    try {
+      const { getDoc } = await import('firebase/firestore');
+      const vaultRef = doc(dbInstance, 'config', 'persistent_vault');
+      const snap = await getDoc(vaultRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
+          console.log(`🔥 [Firebase] Estado da plataforma restaurado da nuvem Firestore (${data.accounts.length} contas, ${data.trades?.length || 0} trades).`);
+          return data;
+        }
+      }
+    } catch (err: any) {
+      console.warn('⚠️ [Firebase] Falha ao recuperar estado da nuvem:', err.message);
+    }
+    return null;
   }
 
   /**

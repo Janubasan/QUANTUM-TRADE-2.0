@@ -13,7 +13,7 @@ export interface TradeRequest {
 }
 
 export class TradeScheduler {
-  private mode: 'scalp' | 'normal';
+  private mode: 'scalp' | 'normal' = 'normal';
   private defaultExchange: string;
   private rules: MarketRules;
   private lastExecution: Map<string, number> = new Map();
@@ -22,7 +22,7 @@ export class TradeScheduler {
   private ordersMinute: number[] = [];
   private ordersHour: number[] = [];
 
-  constructor(mode: 'scalp' | 'normal' = 'scalp', defaultExchange = 'B3') {
+  constructor(mode: 'scalp' | 'normal' = 'normal', defaultExchange = 'B3') {
     this.mode = mode;
     this.defaultExchange = defaultExchange;
     this.rules = EXCHANGE_RULES[defaultExchange] || B3_RULES;
@@ -121,4 +121,4 @@ export class TradeScheduler {
   }
 }
 
-export const defaultTradeScheduler = new TradeScheduler('scalp', 'B3');
+export const defaultTradeScheduler = new TradeScheduler('normal', 'B3');

@@ -11,6 +11,8 @@ import {
   Activity,
   PlusCircle,
   Webhook,
+  Cpu,
+  Radio,
 } from 'lucide-react';
 
 
@@ -42,8 +44,10 @@ export function Navbar({
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard Quântico', icon: LayoutDashboard },
+    { id: 'real-gateway', label: 'Gateway Real & Market Clock', icon: Radio },
     { id: 'accounts', label: 'Contas Multi-Broker', icon: Wallet },
     { id: 'bots', label: 'Bots Autônomos', icon: BotIcon, badge: activeBotsCount },
+    { id: 'nautilus', label: 'Nautilus Trader (Rust)', icon: Cpu },
     { id: 'validation', label: 'Validação RAG & Hashes', icon: ShieldCheck },
     { id: 'webhook', label: 'Webhook & Sinais', icon: Webhook },
     { id: 'entanglement', label: 'Entanglement & Sinais', icon: BrainCircuit },
@@ -94,7 +98,7 @@ export function Navbar({
             >
               {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id} className="bg-zinc-900 text-slate-200">
-                  {acc.name} ({acc.type.toUpperCase()} • R${acc.currentBalance.toFixed(2)})
+                  {acc.name} ({acc.type.toUpperCase()} • ${acc.currentBalance.toFixed(2)} USD)
                 </option>
               ))}
             </select>
@@ -111,7 +115,7 @@ export function Navbar({
           <div className="bg-zinc-900/40 border border-white/5 px-3.5 py-1.5 rounded-full flex items-center gap-2 text-xs">
             <span className="text-white/40 text-[11px]">Saldo Total:</span>
             <span className="font-mono font-bold text-white">
-              R$ {totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              $ {totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
             </span>
           </div>
 
@@ -124,7 +128,7 @@ export function Navbar({
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5" />
-            <span>Lucro: {totalProfit >= 0 ? '+' : ''}R$ {totalProfit.toFixed(2)}</span>
+            <span>Lucro: {totalProfit >= 0 ? '+' : ''}$ {totalProfit.toFixed(2)} USD</span>
           </div>
 
           {/* Active Bots Counter */}
@@ -135,9 +139,9 @@ export function Navbar({
         </div>
       </div>
 
-      {/* Navigation Tabs - Bento Pill Style */}
-      <nav className="border-t border-white/5 bg-zinc-950/40 overflow-x-auto scrollbar-none py-2 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-2">
+      {/* Navigation Tabs - Bento Pill Style with visible cyan scrollbar */}
+      <nav className="border-t border-white/5 bg-zinc-950/60 overflow-x-auto custom-scrollbar py-2.5 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto flex items-center gap-2 min-w-max pb-1">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -145,10 +149,10 @@ export function Navbar({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-full transition whitespace-nowrap cursor-pointer ${
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-full transition whitespace-nowrap cursor-pointer shrink-0 ${
                   isActive
-                    ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
-                    : 'bg-zinc-900/30 text-white/60 hover:text-white hover:bg-zinc-900/60 border border-white/5'
+                    ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.2)] font-semibold'
+                    : 'bg-zinc-900/40 text-white/60 hover:text-white hover:bg-zinc-900/80 border border-white/5'
                 }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : 'text-white/40'}`} />

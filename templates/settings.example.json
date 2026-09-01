@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "telegram_bot": {
+      "enabled": true,
+      "bot_token": "SEU_TOKEN_DO_BOTFATHER",
+      "manager_chat_ids": [123456789]
+    }
+  },
+  "MetaTrader": {
+    "server": "Broker-DemoServer",
+    "username": 12345678,
+    "password": "SUA_SENHA_MT5",
+    "path": "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+  },
+  "Notification": {
+    "token": "SEU_TOKEN_DO_BOTFATHER",
+    "chatId": 123456789
+  }
+}

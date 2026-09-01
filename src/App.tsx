@@ -18,6 +18,8 @@ import { EntanglementView } from './components/EntanglementView';
 
 import { BacktestingView } from './components/BacktestingView';
 import { TradeHistoryView } from './components/TradeHistoryView';
+import { NautilusBridgeView } from './components/NautilusBridgeView';
+import { RealExecutionGatewayView } from './components/RealExecutionGatewayView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -91,18 +93,18 @@ export default function App() {
 
   const selectedAccount =
     accounts.find((a) => a.id === selectedAccountId) || accounts[0] || {
-      id: 'demo-1',
-      name: 'Desafio R$100 Demo',
+      id: 'acc-demo-1',
+      name: 'Desafio $100 USD Demo (Simulado)',
       broker: 'binance',
       type: 'demo',
-      initialBalance: 100,
-      currentBalance: 105.8,
-      baseCurrency: 'BRL',
+      initialBalance: 100.0,
+      currentBalance: 100.0,
+      baseCurrency: 'USD',
       isActive: true,
       createdAt: new Date().toISOString(),
-      totalTrades: 4,
-      winningTrades: 3,
-      pnlTotal: 5.8,
+      totalTrades: 0,
+      winningTrades: 0,
+      pnlTotal: 0,
     };
 
   return (
@@ -137,6 +139,8 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'real-gateway' && <RealExecutionGatewayView />}
+
         {activeTab === 'accounts' && (
           <AccountsView accounts={accounts} onRefreshData={loadData} />
         )}
@@ -149,6 +153,8 @@ export default function App() {
             onRefreshData={loadData}
           />
         )}
+
+        {activeTab === 'nautilus' && <NautilusBridgeView />}
 
         {activeTab === 'webhook' && <WebhookView />}
 

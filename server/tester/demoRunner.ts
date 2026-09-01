@@ -151,6 +151,10 @@ export class AuditDemoRunner {
   public getSimulatedTrades(): TradeSimulation[] {
     return [...this.simulatedTrades];
   }
+
+  public clearSimulations() {
+    this.simulatedTrades = [];
+  }
 }
 
 export const defaultAuditRunner = new AuditDemoRunner();

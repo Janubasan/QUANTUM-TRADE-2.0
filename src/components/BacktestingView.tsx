@@ -82,6 +82,8 @@ export function BacktestingView() {
                 onChange={(e) => setStrategy(e.target.value as StrategyId)}
                 className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
               >
+                <option value="lumibot_signal_strategy" className="bg-zinc-900">Lumibot Multi-Broker SignalStrategy (Composite RSI/MACD/BB)</option>
+                <option value="lumibot_killer_momentum_rsi" className="bg-zinc-900">Lumibot Killer Momentum + RSI (Multi-Asset)</option>
                 <option value="m1_pro" className="bg-zinc-900">M1 Pro Scalper Setup</option>
                 <option value="kronos_grid" className="bg-zinc-900">Kronos Volatility Grid</option>
                 <option value="quantum_entanglement" className="bg-zinc-900">Quantum Entanglement Arbitrage</option>
