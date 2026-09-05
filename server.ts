@@ -21,7 +21,12 @@ import { firebaseService } from './server/services/firebaseService.js';
 import { operationalGuard } from './server/services/operationalGuard.js';
 import { nautilusBridgeService } from './server/services/nautilusBridgeService.js';
 import { realExecutionGateway } from './server/services/realExecutionGateway.js';
-import { BlockchainAdapter, CHAINS, ChainKey } from './server/services/adapters/blockchainAdapter.js';
+import { OnchainAdapter } from './server/services/onchain/onchainAdapter.js';
+import { getOnchainService } from './server/services/onchain/onchainService.js';
+import { getAuditAnchorService } from './server/services/onchain/auditAnchor.js';
+import { CHAIN_DEFINITIONS, CHAIN_KEYS, isChainKey } from './server/services/onchain/chainRegistry.js';
+import { TOKEN_REGISTRY, resolveToken, hasToken } from './server/services/onchain/tokenRegistry.js';
+import type { ChainKey } from './server/services/onchain/chainRegistry.js';
 import { marketClockService } from './server/services/marketClockService.js';
 import { executionScheduler } from './server/services/executionScheduler.js';
 import { encryptSecret } from './server/services/cryptoService.js';
@@ -29,7 +34,8 @@ import { Account, Bot, Trade } from './src/types.js';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // PORT configurável por ambiente (padrão 3000, como sempre foi).
+  const PORT = Number(process.env.PORT || 3000);
 
   app.use(express.json());
 
@@ -1029,40 +1035,320 @@ async function startServer() {
     }
   });
 
-  // --- EVM BLOCKCHAIN ON-CHAIN DIRECT INTEGRATION ---
-  app.get('/api/blockchain/chains', (_req, res) => {
-    res.json({ chains: CHAINS });
+  // ======================================================================
+  // INTEGRAÇÃO ON-CHAIN REAL (EVM) — server/services/onchain/
+  //
+  // Regra desta seção: nenhum endpoint devolve dado inventado.
+  // Se não há carteira, não há saldo. Se não houve transação, não há hash.
+  // ======================================================================
+
+  /** Serializa uma rede no formato que a UI já consome. */
+  const serializeChain = (key: string) => {
+    const c = CHAIN_DEFINITIONS[key];
+    return {
+      key: c.key,
+      name: c.name,
+      env: c.env,
+      chainId: c.chainId,
+      nativeSymbol: c.nativeSymbol,
+      rpcUrl: c.rpcUrls[0],
+      rpcUrls: c.rpcUrls,
+      dexName: c.dexName,
+      dexRouter: c.dexRouter || '',
+      wrappedNative: c.wrappedNative,
+      explorer: c.explorer,
+      verification: c.verification,
+      verificationDetail: c.verificationDetail,
+      swapEnabled: Boolean(c.dexRouter) && c.verification === 'verified',
+    };
+  };
+
+  const onchain = () => getOnchainService();
+
+  const onchainAdapter = (): OnchainAdapter => {
+    const adapter = realExecutionGateway.getAdapter('blockchain_evm');
+    if (!(adapter instanceof OnchainAdapter)) {
+      throw new Error('Adaptador on-chain não registrado no gateway.');
+    }
+    return adapter;
+  };
+
+  // ---- Listagem de redes -------------------------------------------------
+  app.get('/api/onchain/chains', (_req, res) => {
+    res.json({
+      chains: CHAIN_KEYS.map(serializeChain),
+      activeChain: onchain().chainDefinition.key,
+    });
   });
 
-  app.get('/api/blockchain/wallet', async (_req, res) => {
+  // ---- Status completo (rede + carteira + saúde do RPC) ------------------
+  app.get('/api/onchain/status', async (_req, res) => {
     try {
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
-      
-      const nativeBalance = await adapter.getNativeBalance();
-      const currentChain = adapter.getChain();
-      const balances = await adapter.getBalances();
-      
+      const svc = onchain();
+      const chain = svc.chainDefinition;
+      const diag = await svc.diagnose();
       res.json({
-        address: adapter.address,
-        chain: currentChain,
-        nativeBalance,
-        balances,
-        isSandbox: adapter.isSandbox,
+        chain: serializeChain(chain.key),
+        wallet: svc.walletState(),
+        rpc: diag,
+        swapEnabled: Boolean(chain.dexRouter) && chain.verification === 'verified',
+        tokens: Object.fromEntries(
+          Object.entries(TOKEN_REGISTRY[chain.key] || {}).map(([sym, addr]) => [sym, addr])
+        ),
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/blockchain/select-chain', (req, res) => {
+  // ---- Troca de rede -----------------------------------------------------
+  app.post('/api/onchain/chain', async (req, res) => {
     try {
       const { chainKey } = req.body || {};
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
+      if (!isChainKey(chainKey)) {
+        return res.status(400).json({ error: `Rede inválida. Disponíveis: ${CHAIN_KEYS.join(', ')}` });
+      }
+      const chain = await onchain().setChain(chainKey as ChainKey);
+      store.addLog('INFO', `⛓️ Rede on-chain alterada para ${chain.name} (chainId ${chain.chainId})`);
+      res.json({ success: true, chain: serializeChain(chain.key) });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
 
-      adapter.setChain(chainKey as ChainKey);
-      res.json({ success: true, currentChain: adapter.getChain() });
+  // ---- Verificação ON-CHAIN do router -----------------------------------
+  app.post('/api/onchain/verify', async (_req, res) => {
+    try {
+      const chain = await onchain().verifyRouter();
+      res.json({
+        success: chain.verification === 'verified',
+        verification: chain.verification,
+        detail: chain.verificationDetail,
+        chain: serializeChain(chain.key),
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Carregar chave privada (cifra AES-256-GCM antes de guardar) -------
+  app.post('/api/onchain/wallet/key', (req, res) => {
+    try {
+      const { privateKey } = req.body || {};
+      if (!privateKey || typeof privateKey !== 'string') {
+        return res.status(400).json({ error: 'privateKey é obrigatório.' });
+      }
+      const state = onchain().setPrivateKey(privateKey);
+      const encrypted = encryptSecret(privateKey);
+      store.addLog(
+        'RULE',
+        `🔑 Carteira on-chain carregada ${state.address} (chainId ${state.chainId}). Chave mantida apenas em memória.`
+      );
+      // Nunca devolvemos a chave. Devolvemos só o fingerprint cifrado.
+      res.json({ success: true, wallet: state, storedCipherPrefix: encrypted.slice(0, 12) + '...' });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Endereço apenas observado (MetaMask / cold wallet) ----------------
+  app.post('/api/onchain/watch-address', (req, res) => {
+    try {
+      const { address } = req.body || {};
+      if (!address) return res.status(400).json({ error: 'address é obrigatório.' });
+      const mm = realExecutionGateway.getAdapter('metamask') as any;
+      mm?.setWatchAddress?.(address);
+      res.json({ success: true, watchAddress: mm?.walletAddress });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Saldos REAIS ------------------------------------------------------
+  app.get('/api/onchain/balances', async (req, res) => {
+    try {
+      const tokensParam = String(req.query.tokens || '');
+      const tokens = tokensParam
+        ? tokensParam.split(',').map((t) => t.trim()).filter(Boolean)
+        : Object.values(TOKEN_REGISTRY[onchain().chainDefinition.key] || {});
+      const portfolio = await onchain().getPortfolio(tokens as string[]);
+      res.json(portfolio);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Cotação REAL (router.getAmountsOut) -------------------------------
+  app.post('/api/onchain/quote', async (req, res) => {
+    try {
+      const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {};
+      if (!tokenIn || !tokenOut || !amountIn) {
+        return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
+      }
+      const quote = await onchain().getQuote(
+        String(tokenIn),
+        String(tokenOut),
+        String(amountIn),
+        slippageBps ? Number(slippageBps) : 50
+      );
+      res.json({ success: true, quote });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Swap REAL ---------------------------------------------------------
+  // Regras:
+  //   • sem `confirm: true` no corpo  => DRY-RUN (hash: null, nada é enviado);
+  //   • mainnet exige também o header  X-Confirm-Live: <chainKey>;
+  //   • router precisa estar verificado on-chain.
+  app.post('/api/onchain/swap', async (req, res) => {
+    try {
+      const { tokenIn, tokenOut, amountIn, slippageBps, deadlineSeconds, recipient, confirm, dryRun } =
+        req.body || {};
+      if (!tokenIn || !tokenOut || !amountIn) {
+        return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
+      }
+
+      const svc = onchain();
+      const chain = svc.chainDefinition;
+      const confirmHeader = String(req.header('X-Confirm-Live') || '');
+
+      if (chain.env === 'mainnet' && confirm && confirmHeader !== chain.key) {
+        return res.status(412).json({
+          error:
+            `Swap em ${chain.name} exige o header X-Confirm-Live: ${chain.key}. ` +
+            'Nenhuma transação foi enviada.',
+          sent: false,
+        });
+      }
+
+      const result = await svc.swap({
+        tokenIn: String(tokenIn),
+        tokenOut: String(tokenOut),
+        amountIn: String(amountIn),
+        slippageBps: slippageBps ? Number(slippageBps) : 50,
+        deadlineSeconds: deadlineSeconds ? Number(deadlineSeconds) : 300,
+        recipient: recipient ? String(recipient) : undefined,
+        confirm: confirm === true,
+        dryRun: dryRun === true,
+      });
+
+      if (result.status === 'CONFIRMED') {
+        store.addLog(
+          'TRADE',
+          `⛓️ Swap on-chain CONFIRMADO em ${chain.name}: ${result.hash} (bloco ${result.blockNumber}, gas ${result.txFeeNative} ${chain.nativeSymbol})`
+        );
+      } else if (result.hash) {
+        store.addLog(
+          'ERROR',
+          `⛓️ Swap on-chain ${result.status} em ${chain.name}: ${result.hash} — ${result.error || ''}`
+        );
+      }
+
+      res.json({ success: result.status === 'CONFIRMED', result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message, sent: false });
+    }
+  });
+
+  // ---- Status REAL de uma transação --------------------------------------
+  app.get('/api/onchain/tx/:hash', async (req, res) => {
+    try {
+      const status = await onchain().getTransactionStatus(req.params.hash);
+      res.json(status);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Utilidade: símbolo -> contrato na rede ativa ----------------------
+  app.get('/api/onchain/resolve/:symbol', (req, res) => {
+    try {
+      const chainKey = onchain().chainDefinition.key;
+      const symbol = req.params.symbol;
+      if (!hasToken(chainKey, symbol)) {
+        return res.status(404).json({
+          error: `"${symbol}" não registrado na rede ${chainKey}.`,
+          registrados: Object.keys(TOKEN_REGISTRY[chainKey] || {}),
+          dica: `Adicione TOKEN_${chainKey.toUpperCase()}_${symbol.toUpperCase()}=0x... no .env`,
+        });
+      }
+      res.json({ symbol, chainKey, address: resolveToken(chainKey, symbol) });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Trilha de auditoria: ancoragem on-chain + verificação -------------
+  app.post('/api/onchain/audit/anchor', async (req, res) => {
+    try {
+      const dryRun = req.body?.dryRun === true;
+      const record = await getAuditAnchorService().anchorNow({ dryRun });
+      store.addLog(
+        record.anchored ? 'TRADE' : 'RULE',
+        record.anchored
+          ? `🔏 Auditoria ancorada on-chain: bloco ${record.auditBlockNumber} -> tx ${record.txHash}`
+          : `🔏 Ancoragem de auditoria NÃO realizada: ${record.reason}`
+      );
+      res.json({ success: record.anchored, anchor: record });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/onchain/audit/integrity', (_req, res) => {
+    try {
+      res.json(getAuditAnchorService().verify());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ======================================================================
+  // ENDPOINTS LEGADOS /api/blockchain/* — mantidos por compatibilidade,
+  // agora apontando para a implementação real.
+  // ======================================================================
+
+  app.get('/api/blockchain/chains', (_req, res) => {
+    res.json({ chains: Object.fromEntries(CHAIN_KEYS.map((k) => [k, serializeChain(k)])) });
+  });
+
+  app.get('/api/blockchain/wallet', async (_req, res) => {
+    try {
+      const svc = onchain();
+      const state = svc.walletState();
+      if (!state.hasSigningKey) {
+        return res.status(400).json({
+          error:
+            'Nenhuma carteira configurada. Defina EVM_PRIVATE_KEY no .env ou use POST /api/onchain/wallet/key. Nenhum saldo será fabricado.',
+        });
+      }
+      const chainKey = svc.chainDefinition.key;
+      const native = await svc.getNativeBalance();
+      const tokens = Object.entries(TOKEN_REGISTRY[chainKey] || {}).slice(0, 8).map(([, a]) => a);
+      const balances = await onchainAdapter().getBalances();
+      res.json({
+        address: state.address,
+        chain: serializeChain(chainKey),
+        nativeBalance: native.amount,
+        balances,
+        isSandbox: svc.chainDefinition.env === 'testnet',
+        tokensWatched: tokens.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/blockchain/select-chain', async (req, res) => {
+    try {
+      const { chainKey } = req.body || {};
+      if (!isChainKey(chainKey)) {
+        return res.status(400).json({ error: `Rede inválida. Disponíveis: ${CHAIN_KEYS.join(', ')}` });
+      }
+      const chain = await onchain().setChain(chainKey as ChainKey);
+      res.json({ success: true, currentChain: serializeChain(chain.key) });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1074,17 +1360,15 @@ async function startServer() {
       if (!tokenIn || !tokenOut || !amountIn) {
         return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
       }
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
-
-      const amounts = await adapter.getSwapQuote(tokenIn, tokenOut, amountIn.toString());
+      const quote = await onchain().getQuote(String(tokenIn), String(tokenOut), String(amountIn));
       res.json({
         success: true,
         tokenIn,
         tokenOut,
         amountIn,
-        expectedOut: amounts[amounts.length - 1]?.toString() || '0',
-        path: amounts.map((a: any) => a.toString()),
+        expectedOut: quote.amountOutRaw,
+        path: quote.path,
+        quote,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1093,24 +1377,35 @@ async function startServer() {
 
   app.post('/api/blockchain/swap', async (req, res) => {
     try {
-      const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {};
+      const { tokenIn, tokenOut, amountIn, slippageBps, confirm } = req.body || {};
       if (!tokenIn || !tokenOut || !amountIn) {
         return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
       }
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
-
-      const result = await adapter.swapTokens(
-        tokenIn,
-        tokenOut,
-        amountIn.toString(),
-        slippageBps ? Number(slippageBps) : 100
-      );
-      res.json({ success: true, result });
+      const result = await onchain().swap({
+        tokenIn: String(tokenIn),
+        tokenOut: String(tokenOut),
+        amountIn: String(amountIn),
+        slippageBps: slippageBps ? Number(slippageBps) : 50,
+        confirm: confirm === true,
+      });
+      res.json({
+        success: result.status === 'CONFIRMED',
+        result: {
+          hash: result.hash,
+          status: result.status,
+          blockNumber: result.blockNumber,
+          gasUsed: result.gasUsed,
+          explorerUrl: result.explorerUrl,
+          dryRun: result.dryRun,
+          dryRunReason: result.dryRunReason,
+          error: result.error,
+        },
+      });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      res.status(400).json({ error: e.message, sent: false });
     }
   });
+
 
   // --- API 404 & ERROR HANDLING ---
   app.all('/api/*', (_req, res) => {

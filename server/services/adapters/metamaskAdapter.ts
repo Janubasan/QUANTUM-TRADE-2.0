@@ -1,116 +1,207 @@
-import { BrokerAdapter, Balance, SignedOrder, ExecutionReceipt, ExecutionStatus, BrokerKind } from './BrokerAdapter.js';
+/**
+ * metamaskAdapter.ts — Visualizador de carteira EVM (somente leitura).
+ *
+ * O que mudou
+ * -----------
+ * A versão anterior (commit 5ad0464) era 100% fabricada:
+ *   • endereço fixo '0x71C...89e2 (Sepolia Testnet)' — nem é um endereço EVM;
+ *   • `simulatedBalances` com 4.85 ETH, 12450 USDT, 2.1 WETH, 180 UNI;
+ *   • `placeOrder()` gerava hash com Math.random(), latency com Math.random()
+ *     e devolvia status 'FILLED' + blockNumber 5412890 fixo;
+ *   • `getStatus()` devolvia isConnected: true e lastPingMs: 18 sempre.
+ *
+ * MetaMask é uma carteira de navegador: um servidor Node não tem como assinar
+ * por ela. Fingir que executa ordens era o pior tipo de mentira possível num
+ * sistema de trading. Então este adapter passou a fazer apenas o que dá para
+ * fazer de verdade no servidor:
+ *
+ *   1. Ler saldos on-chain reais de um endereço (via OnchainService).
+ *   2. Recusar ordens com uma explicação clara, apontando o caminho real
+ *      (assinatura via MetaMask no navegador, ou chave no cofre + adapter
+ *      blockchain_evm).
+ *
+ * Para executar on-chain de verdade, use `OnchainAdapter`
+ * (server/services/onchain/onchainAdapter.ts).
+ */
+
+import {
+  type Balance,
+  type BrokerAdapter,
+  type BrokerKind,
+  type ExecutionReceipt,
+  type ExecutionStatus,
+  type SignedOrder,
+} from './BrokerAdapter.js';
+import { getOnchainService } from '../onchain/onchainService.js';
+import { TOKEN_REGISTRY } from '../onchain/tokenRegistry.js';
+import { safeAddress } from '../onchain/chainRegistry.js';
 
 export interface MetaMaskConfig {
-  network: 'mainnet' | 'sepolia' | 'arbitrum' | 'polygon';
-  rpcUrl?: string;
+  network: string;
   walletAddress?: string;
   isSandbox: boolean;
 }
 
 export class MetaMaskAdapter implements BrokerAdapter {
   public readonly id = 'metamask';
-  public readonly name = 'MetaMask Web3 EVM Gateway';
+  public readonly name = 'MetaMask (carteira, somente leitura)';
   public readonly kind: BrokerKind = 'wallet';
   public isEnabled: boolean = true;
-  public isSandbox: boolean = true; // Sepolia testnet / simulated by default
 
-  public network: string = 'sepolia';
-  public walletAddress: string = '0x71C...89e2 (Sepolia Testnet)';
+  /** Sempre sandbox: este adapter não executa nada, por definição. */
+  public isSandbox: boolean = true;
 
-  private simulatedBalances: Balance[] = [
-    { asset: 'ETH (Sepolia)', free: 4.85, locked: 0.1, total: 4.95, updatedAt: new Date().toISOString() },
-    { asset: 'USDT (ERC-20)', free: 12450.0, locked: 0, total: 12450.0, updatedAt: new Date().toISOString() },
-    { asset: 'WETH', free: 2.1, locked: 0, total: 2.1, updatedAt: new Date().toISOString() },
-    { asset: 'UNI', free: 180.0, locked: 0, total: 180.0, updatedAt: new Date().toISOString() },
-  ];
+  public network: string;
+  /** Endereço observado. Vazio até alguém informar um endereço válido. */
+  public walletAddress: string = '';
 
-  constructor(isSandbox: boolean = true, network: string = 'sepolia') {
-    this.isSandbox = isSandbox;
+  private lastKnownConnected = false;
+  private lastPingMs = 0;
+  private lastError: string | undefined;
+
+  constructor(_isSandbox: boolean = true, network: string = 'sepolia') {
     this.network = network;
-    if (!isSandbox) {
-      this.walletAddress = '0x71C...89e2 (Ethereum Mainnet)';
-    }
   }
 
-  public async getBalances(): Promise<Balance[]> {
-    return this.simulatedBalances;
+  /** Define o endereço observado. Endereço inválido é rejeitado, não truncado. */
+  public setWatchAddress(address: string): void {
+    const checked = safeAddress(address);
+    if (!checked) {
+      throw new Error(`Endereço EVM inválido: "${address}". Esperado 0x + 40 hex.`);
+    }
+    this.walletAddress = checked;
   }
 
-  public async placeOrder(order: SignedOrder): Promise<ExecutionReceipt> {
-    const startTime = Date.now();
-    const side = order.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL';
-    const clientOrderId = order.order_hash || `mm-${Date.now()}`;
-    const latency = Math.floor(Math.random() * 80 + 35); // 35-115ms (gas estimation + signature roundtrip)
-
-    // Gas & Fee calculation simulation
-    const estimatedGasGwei = this.network === 'sepolia' ? 12 : 28;
-    const gasCostEth = +(estimatedGasGwei * 21000 * 1e-9).toFixed(6);
-    const mockTxHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-
-    // Execute swap / transfer in simulated state
-    const price = order.price || 3450.0;
-    const ethAcc = this.simulatedBalances.find((b) => b.asset.includes('ETH'));
-    const usdtAcc = this.simulatedBalances.find((b) => b.asset.includes('USDT'));
-
-    if (ethAcc && usdtAcc) {
-      if (side === 'BUY') {
-        const costUsdt = price * order.quantity;
-        usdtAcc.free = Math.max(0, usdtAcc.free - costUsdt);
-        ethAcc.free += order.quantity - gasCostEth;
-      } else {
-        ethAcc.free = Math.max(0, ethAcc.free - order.quantity - gasCostEth);
-        usdtAcc.free += price * order.quantity;
-      }
-      ethAcc.total = ethAcc.free + ethAcc.locked;
-      usdtAcc.total = usdtAcc.free + usdtAcc.locked;
-    }
-
+  /** Diagnóstico real contra o RPC da rede ativa. */
+  public async ping(): Promise<{ connected: boolean; latencyMs: number; blockNumber?: number; error?: string }> {
+    const started = Date.now();
+    const diag = await getOnchainService().diagnose();
+    this.lastKnownConnected = diag.connected;
+    this.lastPingMs = diag.latencyMs;
+    this.lastError = diag.error;
     return {
-      success: true,
-      orderId: `mm-tx-${Date.now().toString(36)}`,
-      clientOrderId,
-      externalOrderId: mockTxHash,
-      adapterId: this.id,
-      adapterName: `${this.name} (${this.network.toUpperCase()})`,
-      symbol: order.symbol,
-      side,
-      quantity: order.quantity,
-      filledQuantity: order.quantity,
-      executedPrice: price,
-      fee: gasCostEth,
-      feeAsset: 'ETH',
-      latencyMs: latency,
-      status: 'FILLED',
-      timestamp: new Date().toISOString(),
-      rawResponse: {
-        transactionHash: mockTxHash,
-        blockNumber: 5412890,
-        gasUsed: 21000,
-        effectiveGasPriceGwei: estimatedGasGwei,
-        network: this.network,
-        sender: this.walletAddress,
+      connected: diag.connected,
+      latencyMs: diag.latencyMs,
+      blockNumber: diag.blockNumber ?? undefined,
+      error: diag.error,
+    };
+  }
+
+  /**
+   * Saldos REAIS do endereço observado.
+   * Sem endereço informado => erro explícito (nunca saldo inventado).
+   */
+  public async getBalances(): Promise<Balance[]> {
+    if (!this.walletAddress) {
+      throw new Error(
+        'MetaMaskAdapter: nenhum endereço em observação. Informe via POST /api/onchain/watch-address. Nenhum saldo será fabricado.'
+      );
+    }
+    const svc = getOnchainService();
+    const chainKey = svc.chainDefinition.key;
+    const updatedAt = new Date().toISOString();
+
+    const native = await svc.getNativeBalance(this.walletAddress);
+    const out: Balance[] = [
+      {
+        asset: svc.chainDefinition.nativeSymbol,
+        free: Number(native.amount),
+        locked: 0,
+        total: Number(native.amount),
+        updatedAt,
       },
+    ];
+
+    for (const [symbol, address] of Object.entries(TOKEN_REGISTRY[chainKey] || {})) {
+      try {
+        const bal = await svc.getTokenBalance(address, this.walletAddress);
+        out.push({
+          asset: symbol,
+          free: Number(bal.amount),
+          locked: 0,
+          total: Number(bal.amount),
+          updatedAt,
+        });
+      } catch {
+        // Token ilegível: omitido. Ausência é honesta; número inventado não é.
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Sempre recusa. Um servidor não assina por uma carteira de navegador, e
+   * inventar um hash seria fraude.
+   */
+  public async placeOrder(order: SignedOrder): Promise<ExecutionReceipt> {
+    return {
+      success: false,
+      orderId: order.id,
+      clientOrderId: order.order_hash || order.id,
+      adapterId: this.id,
+      adapterName: this.name,
+      symbol: order.symbol,
+      side: order.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+      quantity: order.quantity,
+      filledQuantity: 0,
+      executedPrice: 0,
+      fee: 0,
+      feeAsset: 'ETH',
+      latencyMs: 0,
+      status: 'REJECTED',
+      timestamp: new Date().toISOString(),
+      error:
+        'MetaMaskAdapter é somente leitura: um servidor não assina transações por uma carteira de navegador. ' +
+        'Para executar on-chain use o adapter blockchain_evm (OnchainAdapter) com EVM_PRIVATE_KEY no cofre, ' +
+        'ou assine no navegador e envie a transação assinada.',
     };
   }
 
   public async cancelOrder(_orderId: string): Promise<boolean> {
-    // On-chain transactions cannot be cancelled once included in a block
     return false;
   }
 
+  /** Status real por receipt; hash inválido nunca vira FILLED. */
   public async getOrder(orderId: string): Promise<ExecutionStatus> {
+    const updatedAt = new Date().toISOString();
+    if (!/^0x[0-9a-fA-F]{64}$/.test(orderId)) {
+      return {
+        orderId,
+        externalOrderId: '',
+        status: 'REJECTED',
+        filledQuantity: 0,
+        remainingQuantity: 0,
+        updatedAt,
+      };
+    }
+    const receipt = await getOnchainService().getReceipt(orderId);
+    if (!receipt) {
+      return {
+        orderId,
+        externalOrderId: orderId,
+        status: 'PENDING',
+        filledQuantity: 0,
+        remainingQuantity: 0,
+        updatedAt,
+      };
+    }
     return {
       orderId,
-      externalOrderId: `0x${orderId}`,
-      status: 'FILLED',
-      filledQuantity: 1.0,
+      externalOrderId: receipt.hash,
+      status: receipt.status === 1 ? 'FILLED' : 'REJECTED',
+      filledQuantity: receipt.status === 1 ? 1 : 0,
       remainingQuantity: 0,
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     };
   }
 
   public async isMarketOpen(_instrument: string): Promise<boolean> {
-    return true; // EVM Blockchains run 24/7/365
+    try {
+      await getOnchainService().getBlockNumber();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   public getStatus() {
@@ -120,8 +211,11 @@ export class MetaMaskAdapter implements BrokerAdapter {
       kind: this.kind,
       isEnabled: this.isEnabled,
       isSandbox: this.isSandbox,
-      isConnected: true,
-      lastPingMs: 18,
+      isConnected: this.lastKnownConnected,
+      lastPingMs: this.lastPingMs,
+      error: this.lastError || (this.walletAddress ? undefined : 'Nenhum endereço em observação'),
+      watchAddress: this.walletAddress || undefined,
+      readOnly: true,
     };
   }
 }
