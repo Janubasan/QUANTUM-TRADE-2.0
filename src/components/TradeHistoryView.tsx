@@ -261,15 +261,15 @@ export function TradeHistoryView({ trades, logs }: TradeHistoryViewProps) {
                           {t.direction}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 text-white/80">{currSym} {t.entryPrice.toFixed(2)}</td>
+                      <td className="py-3.5 px-3 text-white/80">{currSym} {(t.entryPrice ?? 0).toFixed(2)}</td>
                       <td className="py-3.5 px-3 text-white/80">
-                        {isClosed ? `${currSym} ${t.currentPrice.toFixed(2)}` : '—'}
+                        {isClosed ? `${currSym} ${(t.currentPrice ?? 0).toFixed(2)}` : '—'}
                       </td>
                       <td className="py-3.5 px-3 font-bold">
                         {isClosed ? (
                           <span className={isProfit ? 'text-emerald-400' : 'text-rose-400'}>
                             {isProfit ? '+' : ''}
-                            {t.pnlPercent.toFixed(2)}% ({currSym} {t.pnl.toFixed(2)})
+                            {(t.pnlPercent ?? 0).toFixed(2)}% ({currSym} {(t.pnl ?? 0).toFixed(2)})
                           </span>
                         ) : (
                           <div className="flex items-center gap-1 text-amber-300/80 text-[11px]">

@@ -60,6 +60,9 @@ export interface Trade {
   auditCode?: string;
   auditHash?: string;
   auditStatus?: 'PENDING_CLOSE' | 'AUDITED_SEALED';
+  txHash?: string;
+  onchainNetwork?: string;
+  explorerUrl?: string;
   notes?: string;
 }
 
@@ -107,6 +110,7 @@ export interface SessionStats {
 }
 
 export type StrategyId =
+  | 'multi_timeframe_trend_ea'
   | 'm1_pro'
   | 'quant_orb_15m'
   | 'orb_agentic_enhanced'

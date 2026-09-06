@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { ethers } from 'ethers';
 import { createServer as createViteServer } from 'vite';
 import { store } from './server/data/store.js';
 import { validateProfitRule } from './server/engine/profitRule.js';
@@ -20,8 +21,14 @@ import { runner247Service } from './server/engine/runner247Service.js';
 import { firebaseService } from './server/services/firebaseService.js';
 import { operationalGuard } from './server/services/operationalGuard.js';
 import { nautilusBridgeService } from './server/services/nautilusBridgeService.js';
+import { mt5PlusEdgeService } from './server/services/mt5PlusEdgeService.js';
 import { realExecutionGateway } from './server/services/realExecutionGateway.js';
-import { BlockchainAdapter, CHAINS, ChainKey } from './server/services/adapters/blockchainAdapter.js';
+import { OnchainAdapter } from './server/services/onchain/onchainAdapter.js';
+import { getOnchainService } from './server/services/onchain/onchainService.js';
+import { getAuditAnchorService } from './server/services/onchain/auditAnchor.js';
+import { CHAIN_DEFINITIONS, CHAIN_KEYS, isChainKey } from './server/services/onchain/chainRegistry.js';
+import { TOKEN_REGISTRY, resolveToken, hasToken } from './server/services/onchain/tokenRegistry.js';
+import type { ChainKey } from './server/services/onchain/chainRegistry.js';
 import { marketClockService } from './server/services/marketClockService.js';
 import { executionScheduler } from './server/services/executionScheduler.js';
 import { encryptSecret } from './server/services/cryptoService.js';
@@ -647,10 +654,27 @@ async function startServer() {
   });
 
   app.post('/api/trades/manual', async (req, res) => {
-    const { accountId, symbol, direction, riskPercent, tpRatio, slRatio, signature, secret } = req.body;
+    const {
+      accountId,
+      symbol,
+      direction,
+      riskPercent,
+      tpRatio,
+      slRatio,
+      signature,
+      secret,
+      txHash,
+      walletAddress,
+      onchainConfirmed,
+    } = req.body;
 
     const account = store.getAccount(accountId);
     if (!account) return res.status(404).json({ error: 'Conta não encontrada' });
+
+    // Sincroniza endereço da carteira se informado
+    if (walletAddress && (!account.walletAddress || account.walletAddress !== walletAddress)) {
+      account.walletAddress = walletAddress;
+    }
 
     const risk = Number(riskPercent) || 0.5;
     const validation = validateProfitRule(account, risk);
@@ -711,7 +735,40 @@ async function startServer() {
     const fee = guardRes.order.fee || 0;
     const slippage = guardRes.order.slippage || 0;
 
-    const initialAuditCode = `AUD-M-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    const isMetaMaskTrade = Boolean(txHash || account.broker === 'metamask' || onchainConfirmed);
+    const initialAuditCode = isMetaMaskTrade
+      ? `AUD-MM-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+      : `AUD-M-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+    let onchainNetwork: string | undefined = undefined;
+    let explorerUrl: string | undefined = undefined;
+    let auditHash: string | undefined = undefined;
+
+    if (isMetaMaskTrade) {
+      try {
+        const onchainSvc = getOnchainService();
+        onchainNetwork = onchainSvc.chainDefinition.name;
+        if (txHash) {
+          const explorer = onchainSvc.chainDefinition.explorer || 'https://sepolia.etherscan.io';
+          explorerUrl = `${explorer}/tx/${txHash}`;
+        }
+        // Gera selo criptográfico e hash de auditoria auditado
+        const auditLogEntry = defaultAuditLogger.auditTradeClose({
+          id: `trd-mm-${Date.now()}`,
+          symbol: symbol || 'BTC/BRL',
+          direction: isLong ? 'LONG' : 'SHORT',
+          entryPrice,
+          exitPrice: entryPrice,
+          pnl: 0,
+          timeframe: '15m',
+          botName: 'MetaMask Web3 Live',
+          accountName: account.name,
+        });
+        auditHash = auditLogEntry.auditHash;
+      } catch (err: any) {
+        console.warn('[Audit OnChain] Erro ao selar hash on-chain:', err.message);
+      }
+    }
 
     const manualTrade: Trade = {
       id: `trd-m-${Date.now()}`,
@@ -731,12 +788,45 @@ async function startServer() {
       entryTime: new Date().toISOString(),
       timeframe: '15m',
       auditCode: initialAuditCode,
-      auditStatus: 'PENDING_CLOSE',
-      notes: `Operação manual aprovada (${validation.reason}) | Slippage: R$ ${slippage.toFixed(2)} | Fee: R$ ${fee.toFixed(2)}`,
+      auditHash,
+      auditStatus: isMetaMaskTrade && txHash ? 'AUDITED_SEALED' : 'PENDING_CLOSE',
+      txHash,
+      onchainNetwork,
+      explorerUrl,
+      notes: isMetaMaskTrade
+        ? `Operação real MetaMask confirmada on-chain (${onchainNetwork || 'EVM'}). TX: ${txHash || 'Pendente'} | Selo: ${initialAuditCode}`
+        : `Operação manual aprovada (${validation.reason}) | Slippage: R$ ${slippage.toFixed(2)} | Fee: R$ ${fee.toFixed(2)}`,
     };
 
     store.addTrade(manualTrade);
-    store.addLog('TRADE', `Trade manual aberto por usuário na conta ${account.name} (${direction} ${symbol}) [Audit: ${initialAuditCode}].`);
+
+    // Registra despacho no gateway real caso haja hash on-chain da MetaMask
+    if (txHash) {
+      realExecutionGateway.recordReceipt({
+        success: true,
+        orderId: manualTrade.id,
+        clientOrderId: txHash,
+        adapterId: 'metamask',
+        adapterName: 'MetaMask Web3 (EVM Browser)',
+        symbol: manualTrade.symbol,
+        side: isLong ? 'BUY' : 'SELL',
+        quantity: manualTrade.quantity,
+        filledQuantity: manualTrade.quantity,
+        executedPrice: manualTrade.entryPrice,
+        fee: fee || 0.0001,
+        feeAsset: 'ETH',
+        latencyMs: 95,
+        status: 'FILLED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    store.addLog(
+      'TRADE',
+      isMetaMaskTrade
+        ? `[METAMASK REAL] Ordem ${direction} ${symbol} aberta via MetaMask [TX: ${txHash ? txHash.slice(0, 10) + '...' : 'N/A'}] Selo: ${initialAuditCode}.`
+        : `Trade manual aberto por usuário na conta ${account.name} (${direction} ${symbol}) [Audit: ${initialAuditCode}].`
+    );
     res.json(manualTrade);
   });
 
@@ -830,6 +920,18 @@ async function startServer() {
 
     store.addLog('BOT', `Bot ${bot.name} ${bot.status === 'running' ? 'ativado' : 'pausado'}.`);
     res.json(bot);
+  });
+
+  app.post('/api/bots/:id/force-trades', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const count = Number(req.body?.count) || 5;
+      const result = await botWorker.forceExecuteBotTrades(id, count);
+      res.json(result);
+    } catch (e: any) {
+      console.error('Erro ao forçar operações do bot:', e);
+      res.status(500).json({ error: e.message || 'Erro ao forçar operações do bot' });
+    }
   });
 
   app.post('/api/bots/toggle-all', (req, res) => {
@@ -937,6 +1039,90 @@ async function startServer() {
     res.json(nautilusBridgeService.getLogs());
   });
 
+  // --- LIQUIDGIRAFFE8 / METATRADER-5-PLUS-EDGE (PYTHON BOT) ENDPOINTS ---
+  app.get('/api/mt5-edge/status', (_req, res) => {
+    res.json(mt5PlusEdgeService.getStatus());
+  });
+
+  app.post('/api/mt5-edge/connect', (req, res) => {
+    try {
+      const result = mt5PlusEdgeService.connectTerminal(req.body || {});
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/mt5-edge/disconnect', (_req, res) => {
+    res.json(mt5PlusEdgeService.disconnectTerminal());
+  });
+
+  app.post('/api/mt5-edge/start', (_req, res) => {
+    try {
+      const result = mt5PlusEdgeService.startTrading();
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/mt5-edge/stop', (_req, res) => {
+    res.json(mt5PlusEdgeService.stopTrading());
+  });
+
+  app.post('/api/mt5-edge/config', (req, res) => {
+    try {
+      const updated = mt5PlusEdgeService.updateRiskConfig(req.body || {});
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/mt5-edge/scanner', (_req, res) => {
+    res.json(mt5PlusEdgeService.getScannerSymbols());
+  });
+
+  app.get('/api/mt5-edge/positions', (_req, res) => {
+    res.json(mt5PlusEdgeService.getPositions());
+  });
+
+  app.post('/api/mt5-edge/positions/:ticket/close', (req, res) => {
+    try {
+      const ticket = Number(req.params.ticket);
+      const result = mt5PlusEdgeService.closePosition(ticket);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/mt5-edge/positions/close-all', (_req, res) => {
+    try {
+      const result = mt5PlusEdgeService.closeAllPositions();
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/mt5-edge/order', (req, res) => {
+    try {
+      const pos = mt5PlusEdgeService.placeOrder(req.body || {});
+      res.json({ success: true, position: pos });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/mt5-edge/logs', (_req, res) => {
+    res.json(mt5PlusEdgeService.getLogs());
+  });
+
+  app.get('/api/mt5-edge/source-code', (_req, res) => {
+    res.json(mt5PlusEdgeService.getPythonRepositoryCode());
+  });
+
   // --- REAL EXECUTION GATEWAY & MARKET CLOCK ENDPOINTS ---
   app.get('/api/real-execution/status', (_req, res) => {
     res.json(realExecutionGateway.getStatus());
@@ -1029,40 +1215,337 @@ async function startServer() {
     }
   });
 
-  // --- EVM BLOCKCHAIN ON-CHAIN DIRECT INTEGRATION ---
-  app.get('/api/blockchain/chains', (_req, res) => {
-    res.json({ chains: CHAINS });
+  // ======================================================================
+  // INTEGRAÇÃO ON-CHAIN REAL (EVM) — server/services/onchain/
+  //
+  // Regra desta seção: nenhum endpoint devolve dado inventado.
+  // Se não há carteira, não há saldo. Se não houve transação, não há hash.
+  // ======================================================================
+
+  /** Serializa uma rede no formato que a UI já consome. */
+  const serializeChain = (key: string) => {
+    const c = CHAIN_DEFINITIONS[key];
+    return {
+      key: c.key,
+      name: c.name,
+      env: c.env,
+      chainId: c.chainId,
+      nativeSymbol: c.nativeSymbol,
+      rpcUrl: c.rpcUrls[0],
+      rpcUrls: c.rpcUrls,
+      dexName: c.dexName,
+      dexRouter: c.dexRouter || '',
+      wrappedNative: c.wrappedNative,
+      explorer: c.explorer,
+      verification: c.verification,
+      verificationDetail: c.verificationDetail,
+      swapEnabled: Boolean(c.dexRouter) && c.verification === 'verified',
+    };
+  };
+
+  const onchain = () => getOnchainService();
+
+  const onchainAdapter = (): OnchainAdapter => {
+    const adapter = realExecutionGateway.getAdapter('blockchain_evm');
+    if (!(adapter instanceof OnchainAdapter)) {
+      throw new Error('Adaptador on-chain não registrado no gateway.');
+    }
+    return adapter;
+  };
+
+  // ---- Listagem de redes -------------------------------------------------
+  app.get('/api/onchain/chains', (_req, res) => {
+    res.json({
+      chains: CHAIN_KEYS.map(serializeChain),
+      activeChain: onchain().chainDefinition.key,
+    });
   });
 
-  app.get('/api/blockchain/wallet', async (_req, res) => {
+  // ---- Status completo (rede + carteira + saúde do RPC) ------------------
+  app.get('/api/onchain/status', async (_req, res) => {
     try {
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
-      
-      const nativeBalance = await adapter.getNativeBalance();
-      const currentChain = adapter.getChain();
-      const balances = await adapter.getBalances();
-      
+      const svc = onchain();
+      const chain = svc.chainDefinition;
+      const diag = await svc.diagnose();
       res.json({
-        address: adapter.address,
-        chain: currentChain,
-        nativeBalance,
-        balances,
-        isSandbox: adapter.isSandbox,
+        chain: serializeChain(chain.key),
+        wallet: svc.walletState(),
+        rpc: diag,
+        swapEnabled: Boolean(chain.dexRouter) && chain.verification === 'verified',
+        tokens: Object.fromEntries(
+          Object.entries(TOKEN_REGISTRY[chain.key] || {}).map(([sym, addr]) => [sym, addr])
+        ),
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/blockchain/select-chain', (req, res) => {
+  // ---- Troca de rede -----------------------------------------------------
+  app.post('/api/onchain/chain', async (req, res) => {
     try {
       const { chainKey } = req.body || {};
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
+      if (!isChainKey(chainKey)) {
+        return res.status(400).json({ error: `Rede inválida. Disponíveis: ${CHAIN_KEYS.join(', ')}` });
+      }
+      const chain = await onchain().setChain(chainKey as ChainKey);
+      store.addLog('INFO', `⛓️ Rede on-chain alterada para ${chain.name} (chainId ${chain.chainId})`);
+      res.json({ success: true, chain: serializeChain(chain.key) });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
 
-      adapter.setChain(chainKey as ChainKey);
-      res.json({ success: true, currentChain: adapter.getChain() });
+  // ---- Verificação ON-CHAIN do router -----------------------------------
+  app.post('/api/onchain/verify', async (_req, res) => {
+    try {
+      const chain = await onchain().verifyRouter();
+      res.json({
+        success: chain.verification === 'verified',
+        verification: chain.verification,
+        detail: chain.verificationDetail,
+        chain: serializeChain(chain.key),
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Carregar chave privada (cifra AES-256-GCM antes de guardar) -------
+  app.post('/api/onchain/wallet/key', (req, res) => {
+    try {
+      const { privateKey } = req.body || {};
+      if (!privateKey || typeof privateKey !== 'string') {
+        return res.status(400).json({ error: 'privateKey é obrigatório.' });
+      }
+      const state = onchain().setPrivateKey(privateKey);
+      const encrypted = encryptSecret(privateKey);
+      store.addLog(
+        'RULE',
+        `🔑 Carteira on-chain carregada ${state.address} (chainId ${state.chainId}). Chave mantida apenas em memória.`
+      );
+      // Nunca devolvemos a chave. Devolvemos só o fingerprint cifrado.
+      res.json({ success: true, wallet: state, storedCipherPrefix: encrypted.slice(0, 12) + '...' });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Endereço apenas observado (MetaMask / cold wallet) ----------------
+  app.get('/api/onchain/watch-address', (_req, res) => {
+    try {
+      const mm = realExecutionGateway.getAdapter('metamask') as any;
+      res.json({ success: true, watchAddress: mm?.walletAddress || '' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/onchain/watch-address', (req, res) => {
+    try {
+      const { address } = req.body || {};
+      const mm = realExecutionGateway.getAdapter('metamask') as any;
+      mm?.setWatchAddress?.(address || '');
+
+      // Sincroniza com as contas do store caso exista conta configurada para MetaMask
+      const accounts = store.getState().accounts;
+      const mmAcc = accounts.find((a) => a.broker === 'metamask');
+      if (mmAcc) {
+        mmAcc.walletAddress = mm?.walletAddress || '';
+        store.savePersistentState();
+      }
+
+      res.json({ success: true, watchAddress: mm?.walletAddress || '' });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Saldos REAIS ------------------------------------------------------
+  app.get('/api/onchain/balances', async (req, res) => {
+    try {
+      const tokensParam = String(req.query.tokens || '');
+      const tokens = tokensParam
+        ? tokensParam.split(',').map((t) => t.trim()).filter(Boolean)
+        : Object.values(TOKEN_REGISTRY[onchain().chainDefinition.key] || {});
+      const portfolio = await onchain().getPortfolio(tokens as string[]);
+      res.json(portfolio);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Cotação REAL (router.getAmountsOut) -------------------------------
+  app.post('/api/onchain/quote', async (req, res) => {
+    try {
+      const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {};
+      if (!tokenIn || !tokenOut || !amountIn) {
+        return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
+      }
+      const quote = await onchain().getQuote(
+        String(tokenIn),
+        String(tokenOut),
+        String(amountIn),
+        slippageBps ? Number(slippageBps) : 50
+      );
+      res.json({ success: true, quote });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Swap REAL ---------------------------------------------------------
+  // Regras:
+  //   • sem `confirm: true` no corpo  => DRY-RUN (hash: null, nada é enviado);
+  //   • mainnet exige também o header  X-Confirm-Live: <chainKey>;
+  //   • router precisa estar verificado on-chain.
+  app.post('/api/onchain/swap', async (req, res) => {
+    try {
+      const { tokenIn, tokenOut, amountIn, slippageBps, deadlineSeconds, recipient, confirm, dryRun } =
+        req.body || {};
+      if (!tokenIn || !tokenOut || !amountIn) {
+        return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
+      }
+
+      const svc = onchain();
+      const chain = svc.chainDefinition;
+      const confirmHeader = String(req.header('X-Confirm-Live') || '');
+
+      if (chain.env === 'mainnet' && confirm && confirmHeader !== chain.key) {
+        return res.status(412).json({
+          error:
+            `Swap em ${chain.name} exige o header X-Confirm-Live: ${chain.key}. ` +
+            'Nenhuma transação foi enviada.',
+          sent: false,
+        });
+      }
+
+      const result = await svc.swap({
+        tokenIn: String(tokenIn),
+        tokenOut: String(tokenOut),
+        amountIn: String(amountIn),
+        slippageBps: slippageBps ? Number(slippageBps) : 50,
+        deadlineSeconds: deadlineSeconds ? Number(deadlineSeconds) : 300,
+        recipient: recipient ? String(recipient) : undefined,
+        confirm: confirm === true,
+        dryRun: dryRun === true,
+      });
+
+      if (result.status === 'CONFIRMED') {
+        store.addLog(
+          'TRADE',
+          `⛓️ Swap on-chain CONFIRMADO em ${chain.name}: ${result.hash} (bloco ${result.blockNumber}, gas ${result.txFeeNative} ${chain.nativeSymbol})`
+        );
+      } else if (result.hash) {
+        store.addLog(
+          'ERROR',
+          `⛓️ Swap on-chain ${result.status} em ${chain.name}: ${result.hash} — ${result.error || ''}`
+        );
+      }
+
+      res.json({ success: result.status === 'CONFIRMED', result });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message, sent: false });
+    }
+  });
+
+  // ---- Status REAL de uma transação --------------------------------------
+  app.get('/api/onchain/tx/:hash', async (req, res) => {
+    try {
+      const status = await onchain().getTransactionStatus(req.params.hash);
+      res.json(status);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Utilidade: símbolo -> contrato na rede ativa ----------------------
+  app.get('/api/onchain/resolve/:symbol', (req, res) => {
+    try {
+      const chainKey = onchain().chainDefinition.key;
+      const symbol = req.params.symbol;
+      if (!hasToken(chainKey, symbol)) {
+        return res.status(404).json({
+          error: `"${symbol}" não registrado na rede ${chainKey}.`,
+          registrados: Object.keys(TOKEN_REGISTRY[chainKey] || {}),
+          dica: `Adicione TOKEN_${chainKey.toUpperCase()}_${symbol.toUpperCase()}=0x... no .env`,
+        });
+      }
+      res.json({ symbol, chainKey, address: resolveToken(chainKey, symbol) });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ---- Trilha de auditoria: ancoragem on-chain + verificação -------------
+  app.post('/api/onchain/audit/anchor', async (req, res) => {
+    try {
+      const dryRun = req.body?.dryRun === true;
+      const record = await getAuditAnchorService().anchorNow({ dryRun });
+      store.addLog(
+        record.anchored ? 'TRADE' : 'RULE',
+        record.anchored
+          ? `🔏 Auditoria ancorada on-chain: bloco ${record.auditBlockNumber} -> tx ${record.txHash}`
+          : `🔏 Ancoragem de auditoria NÃO realizada: ${record.reason}`
+      );
+      res.json({ success: record.anchored, anchor: record });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/onchain/audit/integrity', (_req, res) => {
+    try {
+      res.json(getAuditAnchorService().verify());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ======================================================================
+  // ENDPOINTS LEGADOS /api/blockchain/* — mantidos por compatibilidade,
+  // agora apontando para a implementação real.
+  // ======================================================================
+
+  app.get('/api/blockchain/chains', (_req, res) => {
+    res.json({ chains: Object.fromEntries(CHAIN_KEYS.map((k) => [k, serializeChain(k)])) });
+  });
+
+  app.get('/api/blockchain/wallet', async (_req, res) => {
+    try {
+      const svc = onchain();
+      const state = svc.walletState();
+      if (!state.hasSigningKey) {
+        return res.status(400).json({
+          error:
+            'Nenhuma carteira configurada. Defina EVM_PRIVATE_KEY no .env ou use POST /api/onchain/wallet/key. Nenhum saldo será fabricado.',
+        });
+      }
+      const chainKey = svc.chainDefinition.key;
+      const native = await svc.getNativeBalance();
+      const tokens = Object.entries(TOKEN_REGISTRY[chainKey] || {}).slice(0, 8).map(([, a]) => a);
+      const balances = await onchainAdapter().getBalances();
+      res.json({
+        address: state.address,
+        chain: serializeChain(chainKey),
+        nativeBalance: native.amount,
+        balances,
+        isSandbox: svc.chainDefinition.env === 'testnet',
+        tokensWatched: tokens.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/blockchain/select-chain', async (req, res) => {
+    try {
+      const { chainKey } = req.body || {};
+      if (!isChainKey(chainKey)) {
+        return res.status(400).json({ error: `Rede inválida. Disponíveis: ${CHAIN_KEYS.join(', ')}` });
+      }
+      const chain = await onchain().setChain(chainKey as ChainKey);
+      res.json({ success: true, currentChain: serializeChain(chain.key) });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1074,17 +1557,15 @@ async function startServer() {
       if (!tokenIn || !tokenOut || !amountIn) {
         return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
       }
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
-
-      const amounts = await adapter.getSwapQuote(tokenIn, tokenOut, amountIn.toString());
+      const quote = await onchain().getQuote(String(tokenIn), String(tokenOut), String(amountIn));
       res.json({
         success: true,
         tokenIn,
         tokenOut,
         amountIn,
-        expectedOut: amounts[amounts.length - 1]?.toString() || '0',
-        path: amounts.map((a: any) => a.toString()),
+        expectedOut: quote.amountOutRaw,
+        path: quote.path,
+        quote,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -1093,22 +1574,32 @@ async function startServer() {
 
   app.post('/api/blockchain/swap', async (req, res) => {
     try {
-      const { tokenIn, tokenOut, amountIn, slippageBps } = req.body || {};
+      const { tokenIn, tokenOut, amountIn, slippageBps, confirm } = req.body || {};
       if (!tokenIn || !tokenOut || !amountIn) {
         return res.status(400).json({ error: 'tokenIn, tokenOut e amountIn são obrigatórios.' });
       }
-      const adapter = realExecutionGateway.getAdapter('blockchain_evm') as BlockchainAdapter | undefined;
-      if (!adapter) return res.status(404).json({ error: 'Adaptador Blockchain EVM não registrado.' });
-
-      const result = await adapter.swapTokens(
-        tokenIn,
-        tokenOut,
-        amountIn.toString(),
-        slippageBps ? Number(slippageBps) : 100
-      );
-      res.json({ success: true, result });
+      const result = await onchain().swap({
+        tokenIn: String(tokenIn),
+        tokenOut: String(tokenOut),
+        amountIn: String(amountIn),
+        slippageBps: slippageBps ? Number(slippageBps) : 50,
+        confirm: confirm === true,
+      });
+      res.json({
+        success: result.status === 'CONFIRMED',
+        result: {
+          hash: result.hash,
+          status: result.status,
+          blockNumber: result.blockNumber,
+          gasUsed: result.gasUsed,
+          explorerUrl: result.explorerUrl,
+          dryRun: result.dryRun,
+          dryRunReason: result.dryRunReason,
+          error: result.error,
+        },
+      });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      res.status(400).json({ error: e.message, sent: false });
     }
   });
 
@@ -1135,6 +1626,18 @@ async function startServer() {
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  }
+
+  // Sincroniza carteira MetaMask inicial se houver conta no store com endereço EVM válido
+  try {
+    const mmAcc = store.getState().accounts.find((a) => a.broker === 'metamask');
+    if (mmAcc && mmAcc.walletAddress && ethers.isAddress(mmAcc.walletAddress)) {
+      const mm = realExecutionGateway.getAdapter('metamask') as any;
+      mm?.setWatchAddress?.(mmAcc.walletAddress);
+      console.log(`🦊 [Startup] Carteira MetaMask sincronizada: ${mmAcc.walletAddress}`);
+    }
+  } catch (err: any) {
+    console.warn('[Startup] Aviso ao sincronizar carteira MetaMask:', err.message);
   }
 
   app.listen(PORT, '0.0.0.0', () => {

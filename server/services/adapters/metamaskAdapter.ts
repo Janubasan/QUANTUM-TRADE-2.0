@@ -1,7 +1,27 @@
+/**
+ * metamaskAdapter.ts
+ * ------------------------------------------------------------------
+ * Adaptador MetaMask (Web3 Browser Wallet).
+ *
+ * ⚠️ CARTEIRA DE NAVEGADOR (Client-Side)
+ * A MetaMask opera exclusivamente no navegador do usuário (via window.ethereum).
+ * O backend não possui a chave privada do usuário e não pode forjar assinaturas
+ * ou executar ordens em nome da MetaMask sem aprovação interativa do operador.
+ *
+ * Este adaptador funciona como visualizador e integrador de status:
+ *   - Não inventa saldos nem hashes aleatórios;
+ *   - Recusa ordens automáticas do backend, orientando a assinatura na UI;
+ *   - Fornece diagnóstico transparente sobre a conexão Web3.
+ * ------------------------------------------------------------------
+ */
+
+import { ethers } from 'ethers';
 import { BrokerAdapter, Balance, SignedOrder, ExecutionReceipt, ExecutionStatus, BrokerKind } from './BrokerAdapter.js';
+import { getOnchainService } from '../onchain/onchainService.js';
+import { TOKEN_REGISTRY } from '../onchain/tokenRegistry.js';
 
 export interface MetaMaskConfig {
-  network: 'mainnet' | 'sepolia' | 'arbitrum' | 'polygon';
+  network: string;
   rpcUrl?: string;
   walletAddress?: string;
   isSandbox: boolean;
@@ -9,119 +29,177 @@ export interface MetaMaskConfig {
 
 export class MetaMaskAdapter implements BrokerAdapter {
   public readonly id = 'metamask';
-  public readonly name = 'MetaMask Web3 EVM Gateway';
+  public readonly name = 'MetaMask Web3 Browser Gateway';
   public readonly kind: BrokerKind = 'wallet';
   public isEnabled: boolean = true;
-  public isSandbox: boolean = true; // Sepolia testnet / simulated by default
+  public isSandbox: boolean = true;
 
   public network: string = 'sepolia';
-  public walletAddress: string = '0x71C...89e2 (Sepolia Testnet)';
+  public walletAddress: string = '';
 
-  private simulatedBalances: Balance[] = [
-    { asset: 'ETH (Sepolia)', free: 4.85, locked: 0.1, total: 4.95, updatedAt: new Date().toISOString() },
-    { asset: 'USDT (ERC-20)', free: 12450.0, locked: 0, total: 12450.0, updatedAt: new Date().toISOString() },
-    { asset: 'WETH', free: 2.1, locked: 0, total: 2.1, updatedAt: new Date().toISOString() },
-    { asset: 'UNI', free: 180.0, locked: 0, total: 180.0, updatedAt: new Date().toISOString() },
-  ];
-
-  constructor(isSandbox: boolean = true, network: string = 'sepolia') {
+  constructor(isSandbox: boolean = true, network: string = 'sepolia', walletAddress: string = '') {
     this.isSandbox = isSandbox;
     this.network = network;
-    if (!isSandbox) {
-      this.walletAddress = '0x71C...89e2 (Ethereum Mainnet)';
+    if (walletAddress && ethers.isAddress(walletAddress)) {
+      this.walletAddress = ethers.getAddress(walletAddress);
     }
+  }
+
+  /**
+   * Define ou remove o endereço de observação da MetaMask (Watch-Only)
+   */
+  public setWatchAddress(address: string) {
+    if (!address || address.trim() === '') {
+      this.walletAddress = '';
+      return;
+    }
+    const clean = address.trim();
+    if (!ethers.isAddress(clean)) {
+      throw new Error(`Endereço EVM inválido: "${address}". Um endereço de carteira Ethereum/MetaMask deve iniciar com '0x' e ter 42 caracteres hexadecimais.`);
+    }
+    this.walletAddress = ethers.getAddress(clean);
   }
 
   public async getBalances(): Promise<Balance[]> {
-    return this.simulatedBalances;
+    if (!this.walletAddress) {
+      return [];
+    }
+
+    try {
+      const svc = getOnchainService();
+      const balances: Balance[] = [];
+
+      // 1. Saldo nativo (ETH, POL, BNB, etc.) direto da rede via RPC sem requerer chave privada
+      try {
+        const native = await svc.getNativeBalance(this.walletAddress);
+        balances.push({
+          asset: native.symbol,
+          free: parseFloat(native.amount),
+          locked: 0,
+          total: parseFloat(native.amount),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.warn(`[MetaMaskAdapter] Erro ao consultar saldo nativo on-chain para ${this.walletAddress}:`, err.message);
+      }
+
+      // 2. Saldos de tokens registrados na rede ativa
+      const tokenMap = TOKEN_REGISTRY[svc.chainDefinition.key] || {};
+      const tokenEntries = Object.entries(tokenMap).slice(0, 4);
+      for (const [, tokenAddr] of tokenEntries) {
+        try {
+          const tBal = await svc.getTokenBalance(tokenAddr, this.walletAddress);
+          balances.push({
+            asset: tBal.token.symbol,
+            free: parseFloat(tBal.amount),
+            locked: 0,
+            total: parseFloat(tBal.amount),
+            updatedAt: new Date().toISOString(),
+          });
+        } catch {
+          // Token sem saldo ou sem contrato na rede
+        }
+      }
+
+      return balances;
+    } catch (e: any) {
+      console.warn('[MetaMaskAdapter] Erro geral ao buscar saldos:', e.message);
+      return [];
+    }
   }
 
   public async placeOrder(order: SignedOrder): Promise<ExecutionReceipt> {
-    const startTime = Date.now();
-    const side = order.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL';
-    const clientOrderId = order.order_hash || `mm-${Date.now()}`;
-    const latency = Math.floor(Math.random() * 80 + 35); // 35-115ms (gas estimation + signature roundtrip)
-
-    // Gas & Fee calculation simulation
-    const estimatedGasGwei = this.network === 'sepolia' ? 12 : 28;
-    const gasCostEth = +(estimatedGasGwei * 21000 * 1e-9).toFixed(6);
-    const mockTxHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-
-    // Execute swap / transfer in simulated state
-    const price = order.price || 3450.0;
-    const ethAcc = this.simulatedBalances.find((b) => b.asset.includes('ETH'));
-    const usdtAcc = this.simulatedBalances.find((b) => b.asset.includes('USDT'));
-
-    if (ethAcc && usdtAcc) {
-      if (side === 'BUY') {
-        const costUsdt = price * order.quantity;
-        usdtAcc.free = Math.max(0, usdtAcc.free - costUsdt);
-        ethAcc.free += order.quantity - gasCostEth;
-      } else {
-        ethAcc.free = Math.max(0, ethAcc.free - order.quantity - gasCostEth);
-        usdtAcc.free += price * order.quantity;
-      }
-      ethAcc.total = ethAcc.free + ethAcc.locked;
-      usdtAcc.total = usdtAcc.free + usdtAcc.locked;
-    }
-
+    // MetaMask requer aprovação interativa do usuário na extensão do navegador
+    const side: 'BUY' | 'SELL' = order.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL';
     return {
-      success: true,
-      orderId: `mm-tx-${Date.now().toString(36)}`,
-      clientOrderId,
-      externalOrderId: mockTxHash,
+      success: false,
+      orderId: `mm-req-${Date.now()}`,
+      clientOrderId: order.order_hash || `mm-${order.id || Date.now()}`,
       adapterId: this.id,
-      adapterName: `${this.name} (${this.network.toUpperCase()})`,
+      adapterName: this.name,
       symbol: order.symbol,
       side,
       quantity: order.quantity,
-      filledQuantity: order.quantity,
-      executedPrice: price,
-      fee: gasCostEth,
+      filledQuantity: 0,
+      executedPrice: 0,
+      fee: 0,
       feeAsset: 'ETH',
-      latencyMs: latency,
-      status: 'FILLED',
+      latencyMs: 1,
+      status: 'REJECTED',
+      error: 'MetaMask requer assinatura interativa no navegador (window.ethereum). Ordens diretas do backend não são permitidas por segurança.',
       timestamp: new Date().toISOString(),
-      rawResponse: {
-        transactionHash: mockTxHash,
-        blockNumber: 5412890,
-        gasUsed: 21000,
-        effectiveGasPriceGwei: estimatedGasGwei,
-        network: this.network,
-        sender: this.walletAddress,
-      },
     };
   }
 
   public async cancelOrder(_orderId: string): Promise<boolean> {
-    // On-chain transactions cannot be cancelled once included in a block
     return false;
   }
 
   public async getOrder(orderId: string): Promise<ExecutionStatus> {
     return {
       orderId,
-      externalOrderId: `0x${orderId}`,
-      status: 'FILLED',
-      filledQuantity: 1.0,
+      externalOrderId: orderId,
+      status: 'REJECTED',
+      filledQuantity: 0,
       remainingQuantity: 0,
       updatedAt: new Date().toISOString(),
     };
   }
 
   public async isMarketOpen(_instrument: string): Promise<boolean> {
-    return true; // EVM Blockchains run 24/7/365
+    return true;
+  }
+
+  public async ping(): Promise<{ success: boolean; latencyMs: number; connected: boolean; error?: string; details?: any }> {
+    const t0 = Date.now();
+    try {
+      const svc = getOnchainService();
+      const networkBlock = await svc.getBlockNumber();
+      const latencyMs = Date.now() - t0;
+      const isConnected = Boolean(this.walletAddress);
+
+      return {
+        success: true,
+        latencyMs,
+        connected: isConnected,
+        error: isConnected
+          ? undefined
+          : 'MetaMask opera no navegador (window.ethereum). Pronto para conexão Web3 no cliente ou modo observador.',
+        details: {
+          chain: svc.chainDefinition.name,
+          chainId: svc.chainDefinition.chainId,
+          blockNumber: networkBlock,
+          walletAddress: this.walletAddress || 'Pendente de conexão no cliente',
+          mode: isConnected ? 'Observador On-Chain Ativo' : 'Aguardando Carteira',
+        },
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        latencyMs: Date.now() - t0,
+        connected: false,
+        error: `Falha na conexão com RPC da rede: ${err.message}`,
+      };
+    }
   }
 
   public getStatus() {
+    let chainName = this.network;
+    try {
+      chainName = getOnchainService().chainDefinition.key || this.network;
+    } catch {}
+
     return {
       id: this.id,
       name: this.name,
       kind: this.kind,
       isEnabled: this.isEnabled,
       isSandbox: this.isSandbox,
-      isConnected: true,
-      lastPingMs: 18,
+      isConnected: Boolean(this.walletAddress),
+      lastPingMs: 0,
+      network: chainName,
+      walletAddress: this.walletAddress || 'Não conectada (conecte via extensão ou insira endereço)',
+      requiresClientSignature: true,
     };
   }
 }

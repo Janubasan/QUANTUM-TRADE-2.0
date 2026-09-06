@@ -170,6 +170,28 @@ export function Runner247FirebaseCard({ onRefresh }: Runner247FirebaseCardProps)
         </div>
       )}
 
+      {/* Quota limit notice */}
+      {firebaseStatus?.quotaExhausted && (
+        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs font-mono text-amber-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              <strong>Quota Free Tier atingida:</strong> Operando em modo protegido local/memória com persistência contínua. A cota é reiniciada amanhã.
+            </span>
+          </div>
+          {firebaseStatus?.quotaUpgradeUrl && (
+            <a
+              href={firebaseStatus.quotaUpgradeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] underline text-amber-300 hover:text-amber-100 font-semibold"
+            >
+              Ver no Firebase Console &rarr;
+            </a>
+          )}
+        </div>
+      )}
+
       {/* 24/7 Live Metrics Bento Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs font-mono relative z-10">
         {/* Metric 1: Uptime */}

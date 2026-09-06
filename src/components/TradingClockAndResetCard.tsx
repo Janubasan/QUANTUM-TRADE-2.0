@@ -329,13 +329,13 @@ export function TradingClockAndResetCard({
             </span>
           </div>
           <div className={`text-2xl font-bold font-mono ${pnlPerHour >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {pnlPerHour >= 0 ? '+' : ''}$ {pnlPerHour.toFixed(2)}
+            {pnlPerHour >= 0 ? '+' : ''}$ {(pnlPerHour || 0).toFixed(2)}
             <span className="text-xs font-normal text-white/60">/h</span>
           </div>
           <div className="text-[10px] text-white/40 flex items-center justify-between">
             <span>Última 1h:</span>
-            <span className={sessionStats && sessionStats.last1HourPnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-              $ {sessionStats?.last1HourPnl.toFixed(2) || '0.00'} USD
+            <span className={(sessionStats?.last1HourPnl ?? 0) >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+              $ {(sessionStats?.last1HourPnl ?? 0).toFixed(2)} USD
             </span>
           </div>
         </div>
@@ -349,13 +349,13 @@ export function TradingClockAndResetCard({
             <span className="text-[10px] text-white/40">USD Demo</span>
           </div>
           <div className="text-2xl font-light font-mono text-white tracking-tight">
-            $ {currentBalance.toFixed(2)} USD
+            $ {(currentBalance ?? 0).toFixed(2)} USD
           </div>
           <div className="text-[10px] text-white/40 flex items-center justify-between">
-            <span>Base: $ {initialBalance.toFixed(2)}</span>
+            <span>Base: $ {(initialBalance ?? 0).toFixed(2)}</span>
             <span className={currentBalance >= initialBalance ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
               {currentBalance >= initialBalance ? '+' : ''}
-              {(currentBalance - initialBalance).toFixed(2)}
+              {((currentBalance ?? 0) - (initialBalance ?? 0)).toFixed(2)}
             </span>
           </div>
         </div>
@@ -384,8 +384,8 @@ export function TradingClockAndResetCard({
               <Sparkles className="w-3.5 h-3.5" /> Projeção 24h
             </span>
           </div>
-          <div className={`text-xl font-bold font-mono ${sessionStats && sessionStats.projected24hPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {sessionStats && sessionStats.projected24hPnl >= 0 ? '+' : ''}$ {sessionStats?.projected24hPnl.toFixed(2) || (pnlPerHour * 24).toFixed(2)} USD
+          <div className={`text-xl font-bold font-mono ${(sessionStats?.projected24hPnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {(sessionStats?.projected24hPnl ?? 0) >= 0 ? '+' : ''}$ {(sessionStats?.projected24hPnl ?? (pnlPerHour * 24) ?? 0).toFixed(2)} USD
           </div>
           <div className="text-[10px] text-white/40 flex items-center justify-between">
             <span>Winrate:</span>
@@ -404,8 +404,8 @@ export function TradingClockAndResetCard({
               <span className="text-[11px] text-white/40">(Últimas 12 Horas de Execução)</span>
             </div>
             <div className="flex items-center gap-4 text-[11px] text-white/60">
-              <span>Últimas 4h: <strong className="text-emerald-400">$ {sessionStats.last4HoursPnl.toFixed(2)} USD</strong> ({sessionStats.last4HoursTrades} ops)</span>
-              <span>Últimas 24h: <strong className="text-emerald-400">$ {sessionStats.last24HoursPnl.toFixed(2)} USD</strong> ({sessionStats.last24HoursTrades} ops)</span>
+              <span>Últimas 4h: <strong className="text-emerald-400">$ {(sessionStats.last4HoursPnl ?? 0).toFixed(2)} USD</strong> ({sessionStats.last4HoursTrades || 0} ops)</span>
+              <span>Últimas 24h: <strong className="text-emerald-400">$ {(sessionStats.last24HoursPnl ?? 0).toFixed(2)} USD</strong> ({sessionStats.last24HoursTrades || 0} ops)</span>
             </div>
           </div>
 
@@ -455,8 +455,8 @@ export function TradingClockAndResetCard({
                       </td>
                       <td className="py-2 px-3 text-center font-mono">
                         {hasTrades ? (
-                          <span className={`font-bold ${bucket.winRate >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {bucket.winRate.toFixed(1)}%
+                          <span className={`font-bold ${(bucket.winRate ?? 0) >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {(bucket.winRate ?? 0).toFixed(1)}%
                           </span>
                         ) : (
                           <span className="text-white/30">-</span>
@@ -466,13 +466,13 @@ export function TradingClockAndResetCard({
                         {hasTrades ? formatDurationDisplay(bucket.avgDurationSeconds) : '-'}
                       </td>
                       <td className="py-2 px-3 text-right text-white/60 font-mono">
-                        {hasTrades ? `$ ${bucket.volumeTotal.toFixed(2)}` : '-'}
+                        {hasTrades ? `$ ${(bucket.volumeTotal ?? 0).toFixed(2)}` : '-'}
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-bold">
                         {hasTrades ? (
-                          <span className={bucket.pnlTotal >= 0 ? 'text-emerald-400 flex items-center justify-end gap-1' : 'text-rose-400 flex items-center justify-end gap-1'}>
-                            {bucket.pnlTotal >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                            {bucket.pnlTotal >= 0 ? '+' : ''}$ {bucket.pnlTotal.toFixed(2)} USD
+                          <span className={(bucket.pnlTotal ?? 0) >= 0 ? 'text-emerald-400 flex items-center justify-end gap-1' : 'text-rose-400 flex items-center justify-end gap-1'}>
+                            {(bucket.pnlTotal ?? 0) >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                            {(bucket.pnlTotal ?? 0) >= 0 ? '+' : ''}$ {(bucket.pnlTotal ?? 0).toFixed(2)} USD
                           </span>
                         ) : (
                           <span className="text-white/30">$ 0.00</span>

@@ -19,6 +19,7 @@ import { EntanglementView } from './components/EntanglementView';
 import { BacktestingView } from './components/BacktestingView';
 import { TradeHistoryView } from './components/TradeHistoryView';
 import { NautilusBridgeView } from './components/NautilusBridgeView';
+import { MT5PlusEdgeView } from './components/MT5PlusEdgeView';
 import { RealExecutionGatewayView } from './components/RealExecutionGatewayView';
 
 export default function App() {
@@ -118,6 +119,7 @@ export default function App() {
         setSelectedAccountId={setSelectedAccountId}
         bots={bots}
         onOpenNewAccountModal={() => setActiveTab('accounts')}
+        onRefreshData={loadData}
       />
 
       {/* Live Market Price Ticker Marquee Bar */}
@@ -149,10 +151,13 @@ export default function App() {
           <BotsView
             bots={bots}
             accounts={accounts}
+            trades={trades}
             logs={logs}
             onRefreshData={loadData}
           />
         )}
+
+        {activeTab === 'mt5-edge' && <MT5PlusEdgeView />}
 
         {activeTab === 'nautilus' && <NautilusBridgeView />}
 

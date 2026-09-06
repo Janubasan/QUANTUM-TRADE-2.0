@@ -35,7 +35,7 @@ export function TickerBar({ tickers, selectedSymbol, onSelectSymbol }: TickerBar
               <span className="font-semibold text-white">{ticker.symbol}</span>
               <span className="font-bold">
                 {ticker.symbol.includes('BRL') ? 'R$' : '$'}{' '}
-                {ticker.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                {(ticker.price ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </span>
 
               <span
@@ -45,7 +45,7 @@ export function TickerBar({ tickers, selectedSymbol, onSelectSymbol }: TickerBar
               >
                 {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                 {isPositive ? '+' : ''}
-                {ticker.change24h.toFixed(2)}%
+                {(ticker.change24h ?? 0).toFixed(2)}%
               </span>
             </button>
           );

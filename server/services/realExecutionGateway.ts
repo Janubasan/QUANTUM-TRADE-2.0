@@ -6,7 +6,9 @@ import { PaperAdapter } from './adapters/paperAdapter.js';
 import { MT5Adapter } from './adapters/mt5Adapter.js';
 import { BinanceAdapter } from './adapters/binanceAdapter.js';
 import { CTraderAdapter } from './adapters/ctraderAdapter.js';
-import { BlockchainAdapter, ChainKey } from './adapters/blockchainAdapter.js';
+import { OnchainAdapter } from './onchain/onchainAdapter.js';
+import { getOnchainService } from './onchain/onchainService.js';
+import type { ChainKey } from './onchain/chainRegistry.js';
 import { marketClockService } from './marketClockService.js';
 import { executionScheduler, QueuedOrder } from './executionScheduler.js';
 
@@ -66,10 +68,12 @@ export class RealExecutionGateway {
   private registerAdapters() {
     const mt5 = new MT5Adapter(true);
     const binance = new BinanceAdapter(true);
-    const blockchain = new BlockchainAdapter('polygon', undefined, true);
+    // Execução on-chain REAL. A rede vem de DEFAULT_CHAIN (.env), cujo padrão é
+    // a testnet Sepolia — o primeiro contato nunca é com dinheiro de verdade.
+    const blockchain = new OnchainAdapter(getOnchainService());
     const ctrader = new CTraderAdapter(true);
     const coinbase = new CoinbaseAdapter(true);
-    const metamask = new MetaMaskAdapter(true, 'sepolia');
+    const metamask = new MetaMaskAdapter(true, getOnchainService().chainDefinition.key);
     const national = new NationalBrokerAdapter('xp', true);
     const paper = new PaperAdapter();
 
@@ -131,9 +135,19 @@ export class RealExecutionGateway {
       return { success: res.connected, latencyMs: res.latencyMs, error: res.error };
     }
 
-    if (adapterId === 'blockchain_evm' && adapter instanceof BlockchainAdapter) {
+    if (adapterId === 'blockchain_evm' && adapter instanceof OnchainAdapter) {
       const res = await adapter.ping();
-      return { success: res.connected, latencyMs: res.latencyMs, error: res.error, details: { blockNumber: res.blockNumber, chain: adapter.getChain().name } };
+      return {
+        success: res.connected,
+        latencyMs: res.latencyMs,
+        error: res.error,
+        details: { blockNumber: res.blockNumber, chain: adapter.chain.name },
+      };
+    }
+
+    if (adapterId === 'metamask' && adapter instanceof MetaMaskAdapter) {
+      const res = await adapter.ping();
+      return { success: res.success, latencyMs: res.latencyMs, error: res.error, details: res.details };
     }
 
     return {
@@ -307,6 +321,16 @@ export class RealExecutionGateway {
       }
     }
     return result;
+  }
+
+  public recordReceipt(receipt: ExecutionReceipt): void {
+    this.totalDispatched += 1;
+    const notional = (receipt.executedPrice || 0) * (receipt.filledQuantity || 0);
+    this.totalVolumeUsd += notional;
+    this.executionHistory.unshift(receipt);
+    if (this.executionHistory.length > 150) {
+      this.executionHistory.pop();
+    }
   }
 
   public getHistory(): ExecutionReceipt[] {

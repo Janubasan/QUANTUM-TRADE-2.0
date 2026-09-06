@@ -17,6 +17,12 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // A API é servida pelo Express; o Vite entra só como middleware de assets.
+      // `true` aceita qualquer Host header (necessário em túnel/preview remoto).
+      allowedHosts: true as const,
+    },
+    preview: {
+      allowedHosts: true as const,
     },
   };
 });

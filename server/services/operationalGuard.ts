@@ -10,7 +10,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { store } from '../data/store.js';
-import { firebaseService } from './firebaseService.js';
+import { firebaseService, isQuotaError } from './firebaseService.js';
 import { realExecutionGateway } from './realExecutionGateway.js';
 
 export interface OrderPayload {
@@ -70,7 +70,7 @@ export class OperationalGuard {
         }
         this.lastKillSwitchFetch = now;
       } catch (e: any) {
-        if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+        if (isQuotaError(e)) {
           firebaseService.markQuotaExhausted();
         }
       }
@@ -93,7 +93,7 @@ export class OperationalGuard {
           { merge: true }
         );
       } catch (e: any) {
-        if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+        if (isQuotaError(e)) {
           firebaseService.markQuotaExhausted();
         }
       }
@@ -122,7 +122,7 @@ export class OperationalGuard {
         }
       }
     } catch (e: any) {
-      if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+      if (isQuotaError(e)) {
         firebaseService.markQuotaExhausted();
       }
     }
@@ -354,7 +354,7 @@ export class OperationalGuard {
           updatedAt: serverTimestamp(),
         });
       } catch (e: any) {
-        if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+        if (isQuotaError(e)) {
           firebaseService.markQuotaExhausted();
         }
       }

@@ -12,7 +12,7 @@ export interface MT5Config {
 
 export class MT5Adapter implements BrokerAdapter {
   public readonly id = 'mt5';
-  public readonly name = 'MetaTrader 5 (JOAT Python Bridge)';
+  public readonly name = 'MetaTrader 5 (Plus Edge Python Bridge)';
   public readonly kind: BrokerKind = 'broker';
   public isEnabled: boolean = true;
   public isSandbox: boolean = true; // Padrão seguro: Sandbox

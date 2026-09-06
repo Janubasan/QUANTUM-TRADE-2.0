@@ -51,7 +51,7 @@ export class BinanceAdapter extends BaseBrokerAdapter {
 
 export class MT5Adapter extends BaseBrokerAdapter {
   readonly brokerId: BrokerId = 'mt5';
-  readonly name = 'MetaTrader 5 (JOAT Python Bridge)';
+  readonly name = 'MetaTrader 5 (Plus Edge Python Bridge)';
 
   async getBalance(_apiKey?: string, _apiSecret?: string): Promise<number> {
     return 10000.0;

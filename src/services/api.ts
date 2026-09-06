@@ -93,6 +93,9 @@ export async function createManualTrade(data: {
   riskPercent: number;
   tpRatio?: number;
   slRatio?: number;
+  txHash?: string;
+  walletAddress?: string;
+  onchainConfirmed?: boolean;
 }): Promise<Trade> {
   return requestJson<Trade>('/api/trades/manual', {
     method: 'POST',
@@ -128,6 +131,28 @@ export async function createBot(data: {
 
 export async function toggleBot(id: string): Promise<Bot> {
   return requestJson<Bot>(`/api/bots/${id}/toggle`, { method: 'POST' });
+}
+
+export async function forceBotTrades(id: string, count: number = 5): Promise<{
+  success: boolean;
+  botName: string;
+  tradesGenerated: number;
+  trades: Trade[];
+  bot: Bot;
+  account: Account;
+}> {
+  return requestJson<{
+    success: boolean;
+    botName: string;
+    tradesGenerated: number;
+    trades: Trade[];
+    bot: Bot;
+    account: Account;
+  }>(`/api/bots/${id}/force-trades`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count }),
+  });
 }
 
 export async function toggleAllBots(running: boolean): Promise<{ success: boolean; running: boolean; bots: Bot[] }> {
@@ -413,6 +438,8 @@ export async function fetchFirebaseStatus(): Promise<{
   lastSync: string | null;
   syncCount: number;
   lastError: string | null;
+  quotaExhausted?: boolean;
+  quotaUpgradeUrl?: string;
 }> {
   try {
     return await requestJson('/api/firebase/status');
@@ -424,6 +451,7 @@ export async function fetchFirebaseStatus(): Promise<{
       lastSync: null,
       syncCount: 0,
       lastError: null,
+      quotaExhausted: false,
     };
   }
 }
@@ -683,6 +711,19 @@ export async function dispatchManualRealOrder(data: {
   });
 }
 
+// MetaMask Web3 Watch Address APIs
+export async function setMetaMaskWatchAddress(address: string): Promise<{ success: boolean; watchAddress: string }> {
+  return requestJson<{ success: boolean; watchAddress: string }>('/api/onchain/watch-address', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  });
+}
+
+export async function getMetaMaskWatchAddress(): Promise<{ success: boolean; watchAddress: string }> {
+  return requestJson<{ success: boolean; watchAddress: string }>('/api/onchain/watch-address');
+}
+
 // EVM On-Chain Integration APIs
 export interface BlockchainChainInfo {
   name: string;
@@ -749,6 +790,366 @@ export async function executeBlockchainSwap(tokenIn: string, tokenOut: string, a
     body: JSON.stringify({ tokenIn, tokenOut, amountIn, slippageBps }),
   });
 }
+
+// --- LIQUIDGIRAFFE8 / METATRADER-5-PLUS-EDGE (PYTHON) API ---
+export interface MT5TerminalInfo {
+  login: number;
+  server: string;
+  company: string;
+  terminalPath: string;
+  connected: boolean;
+  pingMs: number;
+  leverage: number;
+  balance: number;
+  equity: number;
+  marginFree: number;
+  currency: string;
+  tradeAllowed: boolean;
+}
+
+export interface MT5RiskConfig {
+  riskPercentPerTrade: number;
+  maxDailyDrawdownPct: number;
+  maxOpenPositions: number;
+  maxSpreadPoints: number;
+  trailingStopEnabled: boolean;
+  trailingActivationPoints: number;
+  trailingStepPoints: number;
+  magicNumber: number;
+  selectedStrategy: 'Quantum M1 Pro Scalper' | 'Quantum Trend Wave' | 'SuperTrend Multi-EMA' | 'Bollinger Breakout';
+}
+
+export interface MT5ScannerSymbol {
+  symbol: string;
+  category: 'Forex' | 'Crypto' | 'Metals' | 'Indices';
+  bid: number;
+  ask: number;
+  spreadPoints: number;
+  rsi14: number;
+  atr14: number;
+  emaTrend: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  signal: 'BUY' | 'SELL' | 'NEUTRAL';
+  signalConfidence: number;
+  signalReason: string;
+  lastUpdate: string;
+}
+
+export interface MT5Position {
+  ticket: number;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  volume: number;
+  openPrice: number;
+  currentPrice: number;
+  sl: number;
+  tp: number;
+  pnl: number;
+  pnlPercent: number;
+  magic: number;
+  openTime: string;
+  comment: string;
+}
+
+export interface MT5EdgeLog {
+  id: string;
+  timestamp: string;
+  level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR';
+  source: 'MT5Terminal' | 'PythonBot' | 'RiskManager' | 'Scanner' | 'Execution';
+  message: string;
+}
+
+export interface MT5EdgeStatus {
+  isRunning: boolean;
+  isConnected: boolean;
+  repo: string;
+  version: string;
+  pythonRuntime: string;
+  terminal: MT5TerminalInfo;
+  riskConfig: MT5RiskConfig;
+  activePositionsCount: number;
+  dailyPnl: number;
+  dailyDrawdownPct: number;
+  totalTradesToday: number;
+  winRateToday: number;
+  uptimeSeconds: number;
+  lastAuditTime: string;
+}
+
+export interface MT5SourceCode {
+  mainScript: string;
+  riskManagerScript: string;
+  strategyScript: string;
+  requirementsTxt: string;
+  envExample: string;
+  readmeMd: string;
+  bot09Mql5EA?: string;
+}
+
+export async function fetchMT5EdgeStatus(): Promise<MT5EdgeStatus> {
+  return requestJson<MT5EdgeStatus>('/api/mt5-edge/status');
+}
+
+export async function connectMT5Edge(params: { login?: number; server?: string; terminalPath?: string }): Promise<{ success: boolean; message: string }> {
+  return requestJson('/api/mt5-edge/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+export async function disconnectMT5Edge(): Promise<{ success: boolean; message: string }> {
+  return requestJson('/api/mt5-edge/disconnect', { method: 'POST' });
+}
+
+export async function startMT5EdgeTrading(): Promise<{ success: boolean; message: string }> {
+  return requestJson('/api/mt5-edge/start', { method: 'POST' });
+}
+
+export async function stopMT5EdgeTrading(): Promise<{ success: boolean; message: string }> {
+  return requestJson('/api/mt5-edge/stop', { method: 'POST' });
+}
+
+export async function updateMT5EdgeConfig(config: Partial<MT5RiskConfig>): Promise<MT5RiskConfig> {
+  return requestJson<MT5RiskConfig>('/api/mt5-edge/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}
+
+export async function fetchMT5EdgeScanner(): Promise<MT5ScannerSymbol[]> {
+  return requestJson<MT5ScannerSymbol[]>('/api/mt5-edge/scanner');
+}
+
+export async function fetchMT5EdgePositions(): Promise<MT5Position[]> {
+  return requestJson<MT5Position[]>('/api/mt5-edge/positions');
+}
+
+export async function closeMT5EdgePosition(ticket: number): Promise<{ success: boolean; message: string; closedPosition?: MT5Position }> {
+  return requestJson(`/api/mt5-edge/positions/${ticket}/close`, { method: 'POST' });
+}
+
+export async function closeAllMT5EdgePositions(): Promise<{ success: boolean; closedCount: number; totalPnl: number }> {
+  return requestJson('/api/mt5-edge/positions/close-all', { method: 'POST' });
+}
+
+export async function sendMT5EdgeOrder(order: { symbol: string; side: 'BUY' | 'SELL'; volume: number; slPoints?: number; tpPoints?: number; comment?: string }): Promise<{ success: boolean; position: MT5Position }> {
+  return requestJson('/api/mt5-edge/order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(order),
+  });
+}
+
+export async function fetchMT5EdgeLogs(): Promise<MT5EdgeLog[]> {
+  return requestJson<MT5EdgeLog[]>('/api/mt5-edge/logs');
+}
+
+export async function fetchMT5EdgeSourceCode(): Promise<MT5SourceCode> {
+  return requestJson<MT5SourceCode>('/api/mt5-edge/source-code');
+}
+
+// ============================================================================
+// On-Chain EVM Real Integration API
+// ============================================================================
+
+export interface OnchainChainItem {
+  key: string;
+  name: string;
+  env: 'mainnet' | 'testnet';
+  chainId: number;
+  nativeSymbol: string;
+  rpcUrls: string[];
+  wrappedNative: string;
+  dexRouter: string | null;
+  dexName: string;
+  explorer: string;
+  verification?: 'verified' | 'unverified' | 'invalid';
+  verificationDetail?: string;
+}
+
+export interface OnchainStatusResponse {
+  wallet: {
+    hasKey: boolean;
+    address: string | null;
+    chainKey: string;
+    chainName: string;
+    chainId: number;
+    env: 'mainnet' | 'testnet';
+    liveAllowed: boolean;
+    maxNotionalUsd: number;
+    infiniteApproval: boolean;
+    forceMultihop: boolean;
+    confirmations: number;
+    configuredTokens: number;
+  };
+  rpc: {
+    connected: boolean;
+    rpcUrl?: string;
+    chainId?: number;
+    blockNumber?: number;
+    latencyMs: number;
+    error?: string;
+  };
+  tokens: Array<{
+    symbol: string;
+    address: string;
+    decimals: number;
+  }>;
+}
+
+export interface OnchainBalancesResponse {
+  chain: string;
+  walletAddress: string;
+  native: {
+    symbol: string;
+    formatted: string;
+    wei: string;
+    provenance: string;
+  };
+  tokens: Array<{
+    symbol: string;
+    balance: string;
+    formatted: string;
+    decimals: number;
+    allowance: string;
+    allowanceFormatted: string;
+    address: string;
+  }>;
+}
+
+export interface OnchainQuoteRequest {
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: string;
+  slippagePercent?: number;
+}
+
+export interface OnchainQuoteResponse {
+  tokenIn: { symbol: string; address: string; decimals: number };
+  tokenOut: { symbol: string; address: string; decimals: number };
+  amountIn: string;
+  amountInRaw: string;
+  amountOut: string;
+  amountOutRaw: string;
+  amountOutMin: string;
+  amountOutMinRaw: string;
+  slippagePercent: number;
+  path: string[];
+  dexName: string;
+  dexRouter: string;
+  provenance: string;
+}
+
+export interface OnchainSwapRequest {
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: string;
+  slippagePercent?: number;
+  recipient?: string;
+  confirm?: boolean;
+  dryRun?: boolean;
+}
+
+export interface OnchainSwapResponse {
+  success: boolean;
+  dryRun: boolean;
+  chain: string;
+  txHash: string | null;
+  explorerUrl: string | null;
+  amountIn: string;
+  amountOutEstimated: string;
+  amountOutActual?: string;
+  gasUsed?: string;
+  effectiveGasPriceGwei?: string;
+  status: 'PENDING' | 'CONFIRMED' | 'FAILED' | 'REVERTED' | 'DRY_RUN';
+  error?: string;
+}
+
+export async function fetchOnchainChains(): Promise<{ activeChain: string; chains: OnchainChainItem[] }> {
+  return requestJson('/api/onchain/chains');
+}
+
+export async function fetchOnchainStatus(): Promise<OnchainStatusResponse> {
+  return requestJson('/api/onchain/status');
+}
+
+export async function switchOnchainChain(chainKey: string): Promise<{ success: boolean; chain: any }> {
+  return requestJson('/api/onchain/chain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chainKey }),
+  });
+}
+
+export async function verifyOnchainRouter(chainKey?: string): Promise<{
+  chain: string;
+  status: 'verified' | 'invalid' | 'unverified';
+  detail: string;
+  router: string | null;
+  dexName: string;
+}> {
+  return requestJson('/api/onchain/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chainKey }),
+  });
+}
+
+export async function fetchOnchainBalances(tokens?: string[]): Promise<OnchainBalancesResponse> {
+  const query = tokens && tokens.length > 0 ? `?tokens=${tokens.join(',')}` : '';
+  return requestJson(`/api/onchain/balances${query}`);
+}
+
+export async function fetchOnchainQuote(params: OnchainQuoteRequest): Promise<OnchainQuoteResponse> {
+  return requestJson('/api/onchain/quote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+export async function executeOnchainSwap(params: OnchainSwapRequest): Promise<OnchainSwapResponse> {
+  return requestJson('/api/onchain/swap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+export async function fetchOnchainTx(hash: string): Promise<{
+  hash: string;
+  found: boolean;
+  status: string;
+  blockNumber?: number;
+  confirmations?: number;
+  explorerUrl?: string;
+}> {
+  return requestJson(`/api/onchain/tx/${hash}`);
+}
+
+export async function anchorOnchainAudit(reason?: string): Promise<{
+  success: boolean;
+  txHash: string;
+  auditHeadHash: string;
+  explorerUrl: string;
+}> {
+  return requestJson('/api/onchain/audit/anchor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function fetchOnchainAuditIntegrity(): Promise<{
+  valid: boolean;
+  totalRecords: number;
+  headHash: string | null;
+  error?: string;
+}> {
+  return requestJson('/api/onchain/audit/integrity');
+}
+
 
 
 

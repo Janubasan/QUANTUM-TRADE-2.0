@@ -74,8 +74,9 @@ export class TradeScheduler {
     this.purgeOld(this.ordersMinute, 60.0, now);
     this.purgeOld(this.ordersHour, 3600.0, now);
 
-    // Minimum interval based on timeframe
-    const requiredInterval = this.timeframeToSeconds(request.timeframe);
+    // Minimum interval based on timeframe (capped at 20s for demo responsiveness)
+    const rawInterval = this.timeframeToSeconds(request.timeframe);
+    const requiredInterval = Math.min(rawInterval, 20);
     const key = `${request.symbol}:${request.timeframe}`;
     const lastTs = this.lastExecution.get(key) || 0;
 

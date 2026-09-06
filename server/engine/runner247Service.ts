@@ -109,12 +109,25 @@ export class Runner247Service {
     const state = store.getState();
     const runnerMetrics = this.getMetrics();
 
+    // 1. Trigger local disk persistent state write
+    store.savePersistentState();
+
+    // 2. Sync consolidated snapshot to Firestore
     const result = await firebaseService.syncPlatformState({
       accounts: state.accounts,
       bots: state.bots,
       trades: state.trades,
       runnerStatus: runnerMetrics,
     });
+
+    // 3. Sync full cloud vault to Firestore asynchronously
+    firebaseService.savePlatformVault({
+      accounts: state.accounts,
+      bots: state.bots,
+      trades: state.trades,
+      sessionInfo: state.sessionInfo,
+      logs: state.logs,
+    }).catch(() => {});
 
     return result;
   }

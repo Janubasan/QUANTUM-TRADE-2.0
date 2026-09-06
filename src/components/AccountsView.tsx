@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Account, BrokerId, AccountType } from '../types';
-import { createAccount, resetDemoAccount, deleteAccount } from '../services/api';
+import { createAccount, resetDemoAccount, deleteAccount, setMetaMaskWatchAddress } from '../services/api';
 import {
   Wallet,
   Plus,
@@ -13,7 +13,9 @@ import {
   Copy,
   Check,
   Coins,
+  ExternalLink,
 } from 'lucide-react';
+import { connectMetaMask, FALLBACK_SEPOLIA_ADDRESS } from '../lib/web3MetaMask';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -31,6 +33,52 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
   const [apiSecret, setApiSecret] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // MetaMask modal Web3 connection state
+  const [mmModalConnecting, setMmModalConnecting] = useState(false);
+  const [mmModalNotice, setMmModalNotice] = useState<{ type: 'success' | 'warning' | 'info'; text: string } | null>(null);
+
+  const handleBrokerChange = (newBroker: BrokerId) => {
+    setBroker(newBroker);
+    setMmModalNotice(null);
+    if (newBroker === 'metamask' || newBroker === 'blockchain_evm') {
+      if (walletAddress === '3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv') {
+        setWalletAddress('');
+      }
+    } else if (newBroker === 'coinbase') {
+      if (!walletAddress) {
+        setWalletAddress('3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv');
+      }
+    }
+  };
+
+  const handleDetectMetaMaskInModal = async () => {
+    setMmModalConnecting(true);
+    setMmModalNotice(null);
+    try {
+      const res = await connectMetaMask();
+      if (res.success && res.address) {
+        setWalletAddress(res.address);
+        setMmModalNotice({
+          type: 'success',
+          text: `Carteira conectada: ${res.address.slice(0, 6)}...${res.address.slice(-4)} (${res.chainName || 'EVM'})`,
+        });
+      } else {
+        setMmModalNotice({
+          type: 'info',
+          text: res.error || 'MetaMask não respondeu neste ambiente. Você pode usar a carteira Sepolia Testnet abaixo ou colar manualmente.',
+        });
+      }
+    } catch (err: any) {
+      if (err?.code === 4001) {
+        setMmModalNotice({ type: 'warning', text: 'Conexão cancelada pelo usuário no popup MetaMask.' });
+      } else {
+        setMmModalNotice({ type: 'warning', text: `Erro de detecção Web3: ${err?.message || 'Falha de comunicação'}` });
+      }
+    } finally {
+      setMmModalConnecting(false);
+    }
+  };
 
   const brokerLabels: Record<BrokerId, { name: string; color: string }> = {
     binance: { name: 'Binance (Spot & Futures CCXT)', color: 'border-amber-500/40 text-amber-400 bg-amber-500/10' },
@@ -65,10 +113,17 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
         apiKeyEncrypted: apiKey,
         apiSecretEncrypted: apiSecret,
       });
+
+      // Se for conta MetaMask com endereço EVM, sincroniza também o gateway backend
+      if (broker === 'metamask' && walletAddress && walletAddress.startsWith('0x')) {
+        await setMetaMaskWatchAddress(walletAddress).catch(() => null);
+      }
+
       setIsModalOpen(false);
       setName('');
       setApiKey('');
       setApiSecret('');
+      setMmModalNotice(null);
       onRefreshData();
     } catch (err) {
       console.error(err);
@@ -154,42 +209,73 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                   <div className="flex justify-between text-xs text-white/40">
                     <span>Saldo Inicial:</span>
                     <span className="text-white/80">
-                      {acc.baseCurrency} {acc.initialBalance.toFixed(2)}
+                      {acc.baseCurrency} {(acc.initialBalance ?? 0).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-white/40">Saldo Atual:</span>
                     <span className="font-bold text-cyan-300">
-                      {acc.baseCurrency} {acc.currentBalance.toFixed(2)}
+                      {acc.baseCurrency} {(acc.currentBalance ?? 0).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-white/40">Lucro Acumulado:</span>
                     <span className={`font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {profit >= 0 ? '+' : ''}
-                      {acc.baseCurrency} {profit.toFixed(2)}
+                      {acc.baseCurrency} {(profit ?? 0).toFixed(2)}
                     </span>
                   </div>
                 </div>
 
-                {/* Bitcoin Wallet Address Badge if present */}
+                {/* Wallet Address Badge if present */}
                 {acc.walletAddress && (
-                  <div className="mt-4 p-3 rounded-2xl bg-black/60 border border-amber-500/30 text-[11px] font-mono text-amber-300 space-y-1">
+                  <div className={`mt-4 p-3 rounded-2xl bg-black/60 border ${
+                    acc.broker === 'metamask' || acc.broker === 'blockchain_evm'
+                      ? 'border-orange-500/30 text-orange-300'
+                      : 'border-amber-500/30 text-amber-300'
+                  } text-[11px] font-mono space-y-1`}>
                     <div className="flex items-center justify-between text-white/50 text-[10px]">
-                      <span className="flex items-center gap-1 text-amber-400 font-bold">
-                        <Coins className="w-3.5 h-3.5" /> Endereço Bitcoin (BTC):
-                      </span>
-                      <button
-                        onClick={() => handleCopy(acc.walletAddress!, acc.id)}
-                        className="hover:text-white transition flex items-center gap-1 cursor-pointer text-[10px]"
-                        title="Copiar Endereço"
-                      >
-                        {copiedId === acc.id ? (
-                          <span className="text-emerald-400 flex items-center gap-0.5"><Check className="w-3 h-3" /> Copiado</span>
+                      <span className={`flex items-center gap-1 font-bold ${
+                        acc.broker === 'metamask' || acc.broker === 'blockchain_evm' ? 'text-orange-400' : 'text-amber-400'
+                      }`}>
+                        {acc.broker === 'metamask' ? (
+                          <>
+                            <Wallet className="w-3.5 h-3.5 text-orange-400" /> Carteira MetaMask Web3 (EVM):
+                          </>
+                        ) : acc.broker === 'blockchain_evm' ? (
+                          <>
+                            <Wallet className="w-3.5 h-3.5 text-purple-400" /> Carteira EVM On-Chain:
+                          </>
                         ) : (
-                          <span className="flex items-center gap-0.5"><Copy className="w-3 h-3" /> Copiar</span>
+                          <>
+                            <Coins className="w-3.5 h-3.5 text-amber-400" /> Endereço Bitcoin (BTC):
+                          </>
                         )}
-                      </button>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleCopy(acc.walletAddress!, acc.id)}
+                          className="hover:text-white transition flex items-center gap-1 cursor-pointer text-[10px]"
+                          title="Copiar Endereço"
+                        >
+                          {copiedId === acc.id ? (
+                            <span className="text-emerald-400 flex items-center gap-0.5"><Check className="w-3 h-3" /> Copiado</span>
+                          ) : (
+                            <span className="flex items-center gap-0.5"><Copy className="w-3 h-3" /> Copiar</span>
+                          )}
+                        </button>
+                        {acc.walletAddress.startsWith('0x') && (
+                          <a
+                            href={`https://sepolia.etherscan.io/address/${acc.walletAddress}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="hover:text-white transition text-[10px] text-orange-400 flex items-center gap-0.5"
+                            title="Ver no Etherscan"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                     <div className="text-[11px] text-white font-mono break-all bg-black/50 p-1.5 rounded-lg border border-white/5">
                       {acc.walletAddress}
@@ -213,7 +299,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                     onClick={() => handleResetDemo(acc.id)}
                     className="px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/80 font-mono text-[11px] flex items-center gap-1.5 cursor-pointer transition border border-white/5"
                   >
-                    <RefreshCw className="w-3 h-3 text-cyan-400" /> Reset R$100
+                    <RefreshCw className="w-3 h-3 text-cyan-400" /> Reset $100 USD
                   </button>
                 ) : (
                   <span className="text-[11px] text-white/40 font-mono flex items-center gap-1">
@@ -266,7 +352,7 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
                   <label className="text-white/50 block mb-1">Corretora / Wallet</label>
                   <select
                     value={broker}
-                    onChange={(e) => setBroker(e.target.value as BrokerId)}
+                    onChange={(e) => handleBrokerChange(e.target.value as BrokerId)}
                     className="w-full bg-black/50 border border-white/10 rounded-2xl p-3 text-white outline-none focus:border-cyan-500/50"
                   >
                     <option value="binance" className="bg-zinc-900">Binance (Spot & Futures)</option>
@@ -302,14 +388,70 @@ export function AccountsView({ accounts, onRefreshData }: AccountsViewProps) {
               </div>
 
               <div>
-                <label className="text-white/50 block mb-1">Endereço Bitcoin (BTC Wallet)</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-white/50 block">
+                    {broker === 'metamask'
+                      ? 'Endereço EVM MetaMask (0x...)'
+                      : broker === 'blockchain_evm'
+                      ? 'Endereço EVM da Carteira (0x...)'
+                      : broker === 'coinbase'
+                      ? 'Endereço Bitcoin (BTC Vault)'
+                      : 'Endereço da Carteira (Opcional)'}
+                  </label>
+                  {broker === 'metamask' && (
+                    <button
+                      type="button"
+                      onClick={handleDetectMetaMaskInModal}
+                      disabled={mmModalConnecting}
+                      className="text-[11px] text-orange-400 hover:text-orange-300 font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${mmModalConnecting ? 'animate-spin' : ''}`} />
+                      {mmModalConnecting ? 'Detectando...' : 'Detectar MetaMask'}
+                    </button>
+                  )}
+                </div>
+
                 <input
                   type="text"
-                  placeholder="Ex: 3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv"
+                  placeholder={
+                    broker === 'metamask' || broker === 'blockchain_evm'
+                      ? '0x... Cole seu endereço EVM'
+                      : 'Ex: 3G24UKtkZzYmYewL2fPEGs4hq8SBfwmGVv'
+                  }
                   value={walletAddress}
                   onChange={(e) => setWalletAddress(e.target.value)}
-                  className="w-full bg-black/50 border border-amber-500/30 text-amber-300 rounded-2xl p-3 outline-none focus:border-amber-500 font-mono"
+                  className={`w-full bg-black/50 border ${
+                    broker === 'metamask'
+                      ? 'border-orange-500/30 text-orange-300 focus:border-orange-500'
+                      : broker === 'blockchain_evm'
+                      ? 'border-purple-500/30 text-purple-300 focus:border-purple-500'
+                      : 'border-amber-500/30 text-amber-300 focus:border-amber-500'
+                  } rounded-2xl p-3 outline-none font-mono text-sm`}
                 />
+
+                {broker === 'metamask' && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setWalletAddress(FALLBACK_SEPOLIA_ADDRESS)}
+                      className="text-[11px] text-orange-400/80 hover:text-orange-300 underline cursor-pointer"
+                    >
+                      Preencher com Carteira Sepolia Testnet (0x71C2...b437)
+                    </button>
+                  </div>
+                )}
+
+                {mmModalNotice && (
+                  <div className={`mt-2 p-2 rounded-xl text-xs ${
+                    mmModalNotice.type === 'success'
+                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                      : mmModalNotice.type === 'info'
+                      ? 'bg-sky-500/10 border border-sky-500/20 text-sky-300'
+                      : 'bg-amber-500/10 border border-amber-500/20 text-amber-300'
+                  }`}>
+                    {mmModalNotice.text}
+                  </div>
+                )}
               </div>
 
               <div>

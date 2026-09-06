@@ -4,10 +4,15 @@ import {
   doc,
   setDoc,
   serverTimestamp,
+  setLogLevel,
+  getDocFromServer,
 } from 'firebase/firestore';
 import { readFileSync } from 'fs';
 import path from 'path';
 import { Account, Bot, Trade } from '../../src/types.js';
+
+// Silencia avisos internos de gRPC/idle stream timeout do SDK
+setLogLevel('silent');
 
 let dbInstance: any = null;
 let firebaseInitialized = false;
@@ -16,6 +21,18 @@ let syncCount = 0;
 let syncError: string | null = null;
 let isQuotaExhausted = false;
 let quotaCooldownUntil = 0;
+
+export function isQuotaError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err?.message || String(err)).toLowerCase();
+  return (
+    msg.includes('quota') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('free daily read units') ||
+    msg.includes('free tier database') ||
+    msg.includes('disconnecting idle stream')
+  );
+}
 
 export class FirebaseService {
   private config: any = null;
@@ -39,6 +56,17 @@ export class FirebaseService {
       );
       firebaseInitialized = true;
       console.log('🔥 [Firebase] Firestore conectado com sucesso para:', this.config.projectId);
+
+      // Verificação inicial rápida para detecção proativa de limites do Free Tier
+      getDocFromServer(doc(dbInstance, 'test', 'connection'))
+        .catch((err: any) => {
+          if (isQuotaError(err)) {
+            this.markQuotaExhausted();
+            console.warn('⚠️ [Firebase] Quota diária do Firestore atingida (Free Tier). Modo Local/Memória ativo com segurança.');
+          } else if (err?.message?.includes('the client is offline')) {
+            console.error('Please check your Firebase configuration.');
+          }
+        });
     } catch (err: any) {
       console.warn('⚠️ [Firebase] Inicialização Firestore operando em modo local:', err.message);
       syncError = err.message;
@@ -65,6 +93,10 @@ export class FirebaseService {
 
   public getStatus() {
     const isUnderQuotaCooldown = this.isQuotaLimited();
+    const upgradeUrl = this.config?.projectId && this.config?.firestoreDatabaseId
+      ? `https://console.firebase.google.com/project/${this.config.projectId}/firestore/databases/${this.config.firestoreDatabaseId}/data?openUpgradeDialog=true`
+      : undefined;
+
     return {
       initialized: this.isReady(),
       projectId: this.config?.projectId || 'não configurado',
@@ -72,9 +104,10 @@ export class FirebaseService {
       lastSync: lastSyncTimestamp,
       syncCount,
       lastError: isUnderQuotaCooldown
-        ? 'Quota diária de escrita do Firestore atingida (Free Tier). Modo Local/Memória ativo com segurança.'
+        ? 'Quota diária de leitura/escrita do Firestore atingida (Free Tier - resets amanhã). Modo Local/Memória ativo com 100% de integridade.'
         : syncError,
       quotaExhausted: isUnderQuotaCooldown,
+      quotaUpgradeUrl: upgradeUrl,
     };
   }
 
@@ -112,11 +145,10 @@ export class FirebaseService {
       syncError = null;
       return true;
     } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('Quota limit')) {
+      if (isQuotaError(err)) {
         this.markQuotaExhausted();
       } else {
-        syncError = errMsg;
+        syncError = err?.message || String(err);
       }
       return false;
     }
@@ -142,7 +174,11 @@ export class FirebaseService {
         }
       }
     } catch (err: any) {
-      console.warn('⚠️ [Firebase] Falha ao recuperar estado da nuvem:', err.message);
+      if (isQuotaError(err)) {
+        this.markQuotaExhausted();
+      } else {
+        console.warn('⚠️ [Firebase] Falha ao recuperar estado da nuvem:', err.message);
+      }
     }
     return null;
   }
@@ -205,13 +241,12 @@ export class FirebaseService {
 
       return { success: true };
     } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('Quota limit')) {
+      if (isQuotaError(err)) {
         this.markQuotaExhausted();
         return { success: true, localOnly: true, error: syncError || undefined };
       }
 
-      syncError = errMsg;
+      syncError = err?.message || String(err);
       return { success: false, error: syncError };
     }
   }
@@ -232,7 +267,7 @@ export class FirebaseService {
         details: details || {},
       });
     } catch (e: any) {
-      if (e?.message?.includes('RESOURCE_EXHAUSTED') || e?.message?.includes('quota')) {
+      if (isQuotaError(e)) {
         this.markQuotaExhausted();
       }
     }

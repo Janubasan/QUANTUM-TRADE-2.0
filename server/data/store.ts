@@ -319,6 +319,52 @@ const initialBots: Bot[] = [
     lastExecutionTime: new Date().toISOString(),
     lastLog: '🤖 Lumibot SignalStrategy ativo: composite_signal(RSI/MACD/BB) + 10% cash_at_risk + Multi-Broker ($ USD).',
   },
+  {
+    id: 'bot-09-mtf-trend-ea',
+    accountId: 'acc-demo-1',
+    accountName: 'Desafio $100 USD Demo (Simulado)',
+    accountType: 'demo',
+    name: 'MultiTimeframeTrendEA (Bot 09 - Prop Firm MTF Trend + Fib + AI)',
+    strategy: 'multi_timeframe_trend_ea',
+    config: {
+      symbol: 'BTC/USDT',
+      timeframe: '1h',
+      riskPercent: 0.5,
+      tpRatio: 3.0,
+      slRatio: 1.0,
+      customParams: {
+        magicNumber: 20260903,
+        emaFast: 10,
+        emaSlow: 23,
+        fibBuyLevel: 12.7,
+        fibSellLevel1: 88.6,
+        fibSellLevel2: 88.7,
+        fibSwingBars: 20,
+        usePinBar: 1,
+        useEngulfing: 1,
+        useInsideBar: 1,
+        breakevenTriggerPips: 30,
+        breakevenOffsetPips: 5,
+        trailingStartPips: 40,
+        trailingStepPips: 10,
+        atrPeriod: 14,
+        maxDailyLossPct: 5.0,
+        maxDrawdownPct: 10.0,
+        maxTradesPerDay: 5,
+        newsCurrencies: 'USD,EUR,GBP',
+        newsMinutesWindow: 30,
+        aiOnnxModel: 'model.onnx',
+        aiThreshold: 0.6,
+      },
+    },
+    status: 'running',
+    createdAt: new Date().toISOString(),
+    totalTrades: 0,
+    pnlTotal: 0.0,
+    winRate: 0.0,
+    lastExecutionTime: new Date().toISOString(),
+    lastLog: '🟢 Bot 09 MultiTimeframeTrendEA ativo e rodando: Alinhamento MN1/W1/D1 + Confirmação H4/H1 + Fib 12.7%/88.6% + Trailing ATR + Proteção Prop Firm (Magic #20260903).',
+  },
 ];
 
 // Initial trades
@@ -387,21 +433,22 @@ export class DataStore {
             const calculatedPnl = Number(
               accClosedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0).toFixed(2)
             );
-            const initialBal = acc.initialBalance > 0 ? acc.initialBalance : 100.0;
+            const initialBal = typeof acc.initialBalance === 'number' && acc.initialBalance > 0 ? acc.initialBalance : 100.0;
+            const finalPnl = typeof acc.pnlTotal === 'number' && !isNaN(acc.pnlTotal) ? acc.pnlTotal : calculatedPnl;
             const currentBal =
               typeof acc.currentBalance === 'number' && !isNaN(acc.currentBalance) && acc.currentBalance > 0
                 ? acc.currentBalance
-                : Number((initialBal + calculatedPnl).toFixed(2));
+                : Number((initialBal + finalPnl).toFixed(2));
 
             return {
               ...acc,
               initialBalance: initialBal,
               currentBalance: currentBal,
-              pnlTotal: acc.pnlTotal !== undefined && !isNaN(acc.pnlTotal) ? acc.pnlTotal : calculatedPnl,
+              pnlTotal: finalPnl,
               totalTrades: acc.totalTrades || accClosedTrades.length,
               winningTrades: acc.winningTrades || accClosedTrades.filter((t) => t.pnl > 0).length,
               baseCurrency: 'USD' as const,
-              name: acc.name.replace('R$100', '$100 USD').replace('R$ 100', '$100 USD'),
+              name: (acc.name || 'Desafio $100 USD Demo (Simulado)').replace('R$100', '$100 USD').replace('R$ 100', '$100 USD'),
             };
           });
 
@@ -493,7 +540,11 @@ export class DataStore {
             }
           }
           if (Array.isArray(cloudData.accounts) && cloudData.accounts.length > 0) {
-            this.state.accounts = cloudData.accounts;
+            this.state.accounts = cloudData.accounts.map((acc: Account) => ({
+              ...acc,
+              initialBalance: typeof acc.initialBalance === 'number' && acc.initialBalance > 0 ? acc.initialBalance : 100.0,
+              baseCurrency: 'USD' as const,
+            }));
           }
           this.reconcileAccountsWithTrades();
           this.savePersistentState();
@@ -513,12 +564,13 @@ export class DataStore {
   public reconcileAccountsWithTrades() {
     const closedTrades = this.state.trades.filter((t) => t.status === 'closed');
     for (const acc of this.state.accounts) {
+      acc.initialBalance = typeof acc.initialBalance === 'number' && acc.initialBalance > 0 ? acc.initialBalance : 100.0;
       const accTrades = closedTrades.filter((t) => t.accountId === acc.id || this.state.accounts.length === 1);
       const calculatedPnl = Number(accTrades.reduce((sum, t) => sum + (t.pnl || 0), 0).toFixed(2));
       const winningCount = accTrades.filter((t) => t.pnl > 0).length;
       acc.totalTrades = Math.max(acc.totalTrades, accTrades.length);
       acc.winningTrades = Math.max(acc.winningTrades, winningCount);
-      acc.pnlTotal = Number(calculatedPnl.toFixed(2));
+      acc.pnlTotal = typeof acc.pnlTotal === 'number' && !isNaN(acc.pnlTotal) ? acc.pnlTotal : calculatedPnl;
       acc.currentBalance = Number((acc.initialBalance + acc.pnlTotal).toFixed(2));
     }
   }
