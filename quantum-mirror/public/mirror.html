@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⚛️ Quantum Mirror — Live Trading Desk ($100 Demo Auditada)</title>
+<style>
+  :root { --bg:#0a0e1a; --card:#131a2e; --teal:#14b8a6; --red:#ef4444; --gold:#f59e0b; --txt:#e2e8f0; --mut:#94a3b8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt); font-family:'Segoe UI',system-ui,sans-serif; }
+  header { padding:18px 24px; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:20px; } h1 span { color:var(--teal); }
+  .badges { display:flex; gap:8px; flex-wrap:wrap; }
+  .badge { font-size:12px; padding:4px 10px; border-radius:20px; background:#1e293b; border:1px solid #334155; }
+  .badge.live { border-color:var(--teal); color:var(--teal); }
+  main { display:grid; grid-template-columns: 1fr 380px; gap:16px; padding:16px 24px; max-width:1600px; margin:auto; }
+  @media(max-width:1100px){ main{grid-template-columns:1fr;} }
+  .card { background:var(--card); border:1px solid #1e293b; border-radius:12px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--mut); margin-bottom:12px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; }
+  .stat { background:#0f1526; border-radius:8px; padding:10px; text-align:center; }
+  .stat b { display:block; font-size:18px; } .stat small { color:var(--mut); font-size:11px; }
+  .up{color:var(--teal);} .down{color:var(--red);}
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { padding:8px 6px; border-bottom:1px solid #1e293b; text-align:left; }
+  th { color:var(--mut); font-weight:600; font-size:11px; text-transform:uppercase; }
+  .pill { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+  .long{background:#134e4a;color:#5eead4;} .short{background:#7f1d1d;color:#fca5a5;}
+  #feed { max-height:420px; overflow-y:auto; font-size:12.5px; }
+  #feed div { padding:8px; border-bottom:1px solid #1e293b; }
+  code { background:#0f1526; padding:1px 6px; border-radius:4px; font-size:11.5px; color:var(--gold); }
+  button.rep { background:var(--teal); border:0; color:#04211e; font-weight:700; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px; }
+  .tv { height:520px; border-radius:12px; overflow:hidden; }
+  footer { text-align:center; color:var(--mut); font-size:12px; padding:20px; }
+  a { color:var(--teal); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚛️ QUANTUM <span>MIRROR</span> — Desk Ao Vivo · Demo $100 Auditada</h1>
+  <div class="badges">
+    <span class="badge live" id="b-conn">● conectando…</span>
+    <span class="badge" id="b-venue">venue: …</span>
+    <span class="badge" id="b-data">dados: …</span>
+    <span class="badge" id="b-audit">auditoria: …</span>
+  </div>
+</header>
+<main>
+  <div>
+    <div class="card"><h2>📈 Gráfico TradingView (BTC/USDT)</h2>
+      <div class="tv">
+        <iframe src="https://www.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=15&theme=dark&style=1&locale=br&toolbar_bg=%230a0e1a&hide_side_toolbar=false" style="width:100%;height:100%;border:0;" allowfullscreen></iframe>
+      </div>
+    </div>
+    <div class="card"><h2>📊 Performance (derivada dos fills — nada inventado)</h2><div class="stats" id="stats"></div></div>
+    <div class="card"><h2>🟢 Posições Abertas</h2><table><thead><tr><th>Bot</th><th>Lado</th><th>Ativo</th><th>Entrada</th><th>TP</th><th>SL</th><th>Qtd</th><th>Auditoria</th><th></th></tr></thead><tbody id="open"></tbody></table></div>
+    <div class="card"><h2>📜 Últimas Operações Fechadas</h2><table><thead><tr><th>Bot</th><th>Lado</th><th>Ativo</th><th>Entrada → Saída</th><th>PnL</th><th>Motivo</th><th>Auditoria</th></tr></thead><tbody id="closed"></tbody></table></div>
+  </div>
+  <div>
+    <div class="card"><h2>⚡ Feed do Espelho (tempo real)</h2><div id="feed"></div></div>
+    <div class="card"><h2>🔁 Replicar operação</h2>
+      <p style="font-size:12.5px;color:var(--mut);margin-bottom:10px;">Qualquer trade do espelho pode ser replicado na sua venue. Por padrão, <b>paper</b> (simulado).</p>
+      <code>POST /mirror/replicate/:tradeId</code>
+      <p style="font-size:12.5px;color:var(--mut);margin-top:10px;">Header <code>x-mirror-key</code> + <code>{"venue":"paper","sizeMultiplier":1}</code>. Real exige <code>LIVE_TRADING=true</code> + credenciais.</p>
+    </div>
+    <div class="card"><h2>🧩 Integrações prontas</h2><div id="integ" style="font-size:12.5px;"></div></div>
+  </div>
+</main>
+<footer>Quantum Mirror · 4 bots auditados · <a href="/api/audit/verify">verificar cadeia de auditoria</a> · <a href="/api/integrations">matriz de integrações</a> · Pine Scripts em <code>/pinescript</code> no repositório</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+async function refresh() {
+  try {
+    const s = await (await fetch('/mirror/status')).json();
+    $('b-conn').textContent = s.running ? '● AO VIVO' : '○ pausado';
+    $('b-venue').textContent = 'venue: ' + s.venue + (s.venue==='paper'?' (demo)':'');
+    $('b-data').textContent = 'dados: ' + (s.dataQuality==='live'?'reais (Binance)':'sintéticos');
+    $('b-audit').textContent = 'auditoria: ' + (s.audit.ok ? `íntegra (${s.audit.blocks})` : 'QUEBRADA');
+    const st = s.stats;
+    $('stats').innerHTML = ['Saldo|'+st.balance+'|','PnL|'+(st.totalPnl>=0?'+':'')+st.totalPnl+'|'+(st.totalPnl>=0?'up':'down'),'Retorno|'+st.returnPct+'%|'+(st.returnPct>=0?'up':'down'),'Trades|'+st.trades+'|','Win Rate|'+st.winRate+'%|','Sharpe|'+st.sharpe+'|','Profit Factor|'+st.profitFactor+'|','Abertas|'+st.openPositions+'|']
+      .map(x=>{const[a,b,c]=x.split('|');return `<div class="stat"><b class="${c}">${b}</b><small>${a}</small></div>`}).join('');
+    $('open').innerHTML = s.open.map(t=>`<tr><td>${t.botId}</td><td><span class="pill ${t.direction.toLowerCase()}">${t.direction}</span></td><td>${t.symbol}</td><td>${t.entryPrice}</td><td>${t.tpPrice}</td><td>${t.slPrice}</td><td>${t.quantity}</td><td><code>${t.auditCode||'—'}</code></td><td><button class="rep" onclick="rep('${t.id}')">replicar</button></td></tr>`).join('') || '<tr><td colspan="9" style="color:var(--mut)">sem posições abertas — bots avaliando mercado…</td></tr>';
+    const m = await (await fetch('/mirror/trades?limit=15')).json();
+    $('closed').innerHTML = m.closed.map(t=>`<tr><td>${t.botId}</td><td><span class="pill ${t.direction.toLowerCase()}">${t.direction}</span></td><td>${t.symbol}</td><td>${t.entryPrice} → ${t.exitPrice}</td><td class="${t.pnl>=0?'up':'down'}">${t.pnl>=0?'+':''}${t.pnl}</td><td>${t.exitReason}</td><td><code>${t.exitAuditCode||'—'}</code></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--mut)">nenhum trade fechado ainda</td></tr>';
+    const ig = await (await fetch('/api/integrations')).json();
+    $('integ').innerHTML = '<b>Corretoras:</b> ' + ig.brokers.map(b=>`${b.id}(${b.status})`).join(', ') + '<br><b>Carteiras:</b> ' + ig.wallets.map(w=>`${w.id}(${w.status})`).join(', ') + '<br><b>Chains:</b> ' + ig.chains.map(c=>`${c.id}(${c.status})`).join(', ');
+  } catch(e){ $('b-conn').textContent = '○ offline'; }
+}
+async function rep(id){
+  const key = prompt('x-mirror-key (MIRROR_API_KEY):');
+  if(!key) return;
+  const r = await fetch('/mirror/replicate/'+id,{method:'POST',headers:{'Content-Type':'application/json','x-mirror-key':key},body:JSON.stringify({venue:'paper',sizeMultiplier:1})});
+  alert(JSON.stringify(await r.json(),null,2));
+}
+const es = new EventSource('/mirror/feed');
+es.onmessage = (ev) => {
+  const d = JSON.parse(ev.data);
+  const el = document.createElement('div');
+  const t = d.trade||{};
+  el.innerHTML = d.type==='heartbeat' ? `💓 ${d.ts.slice(11,19)} · saldo ${d.stats.balance} · PnL ${d.stats.totalPnl}` : `${d.type==='trade_open'?'🟢 ABERTURA':'🔴 FECHAMENTO'} <b>${t.botId||''}</b> ${t.direction||''} ${t.symbol||''} @ ${t.entryPrice||t.exitPrice||''} <code>${d.auditCode||''}</code>`;
+  const f = $('feed'); f.prepend(el);
+  while(f.children.length>60) f.lastChild.remove();
+  refresh();
+};
+refresh(); setInterval(refresh, 20000);
+</script>
+</body>
+</html>
