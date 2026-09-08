@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⚛️ Quantum Mirror — Console Fullstack</title>
+<style>
+  :root{--bg:#070b16;--card:#111830;--line:#1f2a4d;--teal:#14b8a6;--red:#ef4444;--gold:#f59e0b;--txt:#e6ecf8;--mut:#8fa0c2;--blue:#60a5fa}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  header{position:sticky;top:0;z-index:10;background:#0a1022f2;border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:17px;margin-right:auto}header h1 span{color:var(--teal)}
+  .badge{font-size:11.5px;padding:4px 11px;border-radius:20px;background:#16203c;border:1px solid var(--line);white-space:nowrap}
+  .badge.ok{border-color:var(--teal);color:var(--teal)}.badge.warn{border-color:var(--gold);color:var(--gold)}.badge.bad{border-color:var(--red);color:var(--red)}
+  nav{display:flex;gap:6px;padding:10px 20px;flex-wrap:wrap;background:#0a1022;border-bottom:1px solid var(--line);position:sticky;top:57px;z-index:9}
+  nav button{background:#16203c;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
+  nav button.active{background:var(--teal);color:#04231f;font-weight:700;border-color:var(--teal)}
+  main{padding:18px 20px;max-width:1500px;margin:auto}
+  section.tab{display:none}section.tab.active{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h2{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);margin-bottom:12px}
+  .grid{display:grid;gap:16px}.g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}.g4{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+  .stat{background:#0c1327;border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center}
+  .stat b{display:block;font-size:17px}.stat small{color:var(--mut);font-size:11px}
+  .up{color:var(--teal)}.down{color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--mut);font-size:10.5px;text-transform:uppercase}
+  .pill{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+  .long{background:#134e4a;color:#5eead4}.short{background:#7f1d1d;color:#fca5a5}.flat{background:#334155;color:#cbd5e1}
+  code{background:#0c1327;padding:1px 6px;border-radius:4px;font-size:11.5px;color:var(--gold);word-break:break-all}
+  pre{background:#0c1327;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:11.5px;max-height:380px;white-space:pre-wrap}
+  button.btn{background:var(--teal);border:0;color:#04231f;font-weight:700;border-radius:7px;padding:7px 13px;cursor:pointer;font-size:12.5px;margin:2px}
+  button.btn.ghost{background:#16203c;color:var(--txt);border:1px solid var(--line)}
+  button.btn.red{background:var(--red);color:#fff}button.btn:disabled{opacity:.4;cursor:default}
+  input,select,textarea{background:#0c1327;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:12.5px;width:100%}
+  label{font-size:11.5px;color:var(--mut);display:block;margin:8px 0 3px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+  #feed{max-height:460px;overflow-y:auto;font-size:12.5px}#feed div{padding:7px 4px;border-bottom:1px solid var(--line)}
+  canvas#chart{width:100%;height:420px;background:#0c1327;border:1px solid var(--line);border-radius:8px}
+  .botcard{border-left:4px solid var(--teal)}
+  .reason{font-size:11.5px;color:var(--mut)}
+  footer{text-align:center;color:var(--mut);font-size:12px;padding:22px}
+  a{color:var(--teal)}
+  .toast{position:fixed;bottom:18px;right:18px;background:#16203c;border:1px solid var(--teal);border-radius:10px;padding:12px 16px;max-width:420px;display:none;z-index:50;font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚛️ QUANTUM <span>MIRROR</span> · Console Fullstack</h1>
+  <span class="badge" id="b-conn">● …</span>
+  <span class="badge" id="b-balance">💰 …</span>
+  <span class="badge" id="b-venue">venue …</span>
+  <span class="badge" id="b-data">dados …</span>
+  <span class="badge" id="b-audit">auditoria …</span>
+</header>
+<nav id="tabs">
+  <button data-t="dash" class="active">📊 Dashboard</button>
+  <button data-t="bots">🤖 Bots</button>
+  <button data-t="market">📈 Mercado</button>
+  <button data-t="integ">🧩 Integrações</button>
+  <button data-t="tv">📡 TradingView</button>
+  <button data-t="audit">🔐 Auditoria</button>
+  <button data-t="feed">⚡ Feed</button>
+  <button data-t="cfg">⚙️ Chaves</button>
+</nav>
+<main>
+  <!-- DASHBOARD -->
+  <section class="tab active" id="t-dash">
+    <div class="card"><h2>📊 Performance da conta demo (derivada dos fills)</h2><div class="stats" id="stats"></div></div>
+    <div class="card"><h2>🟢 Posições abertas <button class="btn ghost" onclick="refresh()">↻ atualizar</button></h2>
+      <table><thead><tr><th>Bot</th><th>Lado</th><th>Ativo</th><th>Entrada</th><th>TP</th><th>SL</th><th>Qtd</th><th>Venue</th><th>Auditoria</th><th>Ação</th></tr></thead><tbody id="open"></tbody></table></div>
+    <div class="card"><h2>📜 Fechadas recentemente</h2>
+      <table><thead><tr><th>Bot</th><th>Lado</th><th>Ativo</th><th>Entrada → Saída</th><th>PnL</th><th>Motivo</th><th>Auditoria</th></tr></thead><tbody id="closed"></tbody></table></div>
+  </section>
+  <!-- BOTS -->
+  <section class="tab" id="t-bots">
+    <div class="grid g2" id="botcards"></div>
+  </section>
+  <!-- MARKET -->
+  <section class="tab" id="t-market">
+    <div class="card"><h2>📈 Gráfico (candles reais da API)</h2>
+      <div class="row" style="margin-bottom:10px">
+        <div><label>Ativo</label><select id="m-sym"><option>BTC/USDT</option><option>ETH/USDT</option><option>SOL/USDT</option></select></div>
+        <div><label>Intervalo</label><select id="m-int"><option>5m</option><option>10m</option><option selected>15m</option><option>30m</option><option>1h</option></select></div>
+        <div><label>&nbsp;</label><button class="btn" onclick="drawMarket()">Carregar gráfico</button></div>
+        <div><label>Preço atual</label><div style="font-size:20px;font-weight:700" id="m-price">…</div></div>
+      </div>
+      <canvas id="chart" width="1200" height="420"></canvas>
+      <p class="reason" id="m-info"></p>
+    </div>
+  </section>
+  <!-- INTEGRATIONS -->
+  <section class="tab" id="t-integ">
+    <div class="card"><h2>🏦 Corretoras / venues <span id="live-flag"></span></h2><table><thead><tr><th>Venue</th><th>Nome</th><th>Status</th><th>Testnet</th><th>Live</th></tr></thead><tbody id="i-brokers"></tbody></table></div>
+    <div class="grid g2">
+      <div class="card"><h2>👛 Carteiras</h2><table><thead><tr><th>Wallet</th><th>Status</th><th>Conexão</th><th>Chains</th></tr></thead><tbody id="i-wallets"></tbody></table></div>
+      <div class="card"><h2>⛓️ Blockchains</h2><table><thead><tr><th>Rede</th><th>Tipo</th><th>Status</th><th>DEX</th></tr></thead><tbody id="i-chains"></tbody></table></div>
+    </div>
+  </section>
+  <!-- TRADINGVIEW -->
+  <section class="tab" id="t-tv">
+    <div class="grid g2">
+      <div class="card"><h2>📤 Enviar alerta de teste (TradingView → servidor)</h2>
+        <div class="row">
+          <div><label>Bot</label><select id="tv-bot"><option value="sol-breakout-30m">SOL Breakout 30m</option><option value="eth-trendwave-10m">ETH Wave 10m</option><option value="regime-desk-5m">Regime Desk 5m</option><option value="orb-mc-15m">ORB MC 15m</option></select></div>
+          <div><label>Ação</label><select id="tv-action"><option value="buy">BUY / LONG</option><option value="sell">SELL / SHORT</option></select></div>
+        </div>
+        <label>Payload (editável)</label>
+        <textarea id="tv-payload" rows="10"></textarea>
+        <div style="margin-top:10px"><button class="btn" onclick="sendTv()">🚀 Enviar alerta</button></div>
+        <label>Resposta</label><pre id="tv-resp">—</pre>
+      </div>
+      <div class="card"><h2>📜 Pine Script por bot (colar no TradingView)</h2>
+        <div class="row"><div><label>Estratégia</label><select id="pine-sel" onchange="loadPine()">
+          <option value="sol_breakout_30m.pine">QM #1 SOL Breakout 30m</option>
+          <option value="eth_trendwave_10m.pine">QM #2 ETH Wave 10m</option>
+          <option value="regime_desk_5m.pine">QM #3 Regime Desk 5m</option>
+          <option value="orb_montecarlo_15m.pine">QM #4 ORB MC 15m</option>
+        </select></div>
+        <div><label>&nbsp;</label><button class="btn ghost" onclick="copyPine()">📋 Copiar</button></div></div>
+        <label>Webhook URL (alerta)</label><pre id="tv-url">—</pre>
+        <label>Código Pine</label><pre id="pine-code">carregando…</pre>
+      </div>
+    </div>
+  </section>
+  <!-- AUDIT -->
+  <section class="tab" id="t-audit">
+    <div class="card"><h2>🔐 Cadeia de auditoria <button class="btn" onclick="verifyAudit()">✔ Verificar integridade</button> <span id="audit-res"></span></h2>
+      <table><thead><tr><th>#</th><th>Hora</th><th>Tipo</th><th>Código</th><th>Hash</th><th>Payload</th></tr></thead><tbody id="audit-rows"></tbody></table></div>
+  </section>
+  <!-- FEED -->
+  <section class="tab" id="t-feed">
+    <div class="card"><h2>⚡ Feed do espelho (SSE tempo real)</h2><div id="feed"></div></div>
+  </section>
+  <!-- CONFIG -->
+  <section class="tab" id="t-cfg">
+    <div class="card"><h2>⚙️ Chaves (armazenadas só neste navegador)</h2>
+      <div class="row">
+        <div><label>x-mirror-key (replicação)</label><input id="cfg-mirror" placeholder="mirror_public_readonly_2026" /></div>
+        <div><label>WEBHOOK_SECRET (alertas TV)</label><input id="cfg-secret" placeholder="quantum_mirror_tv_secret_2026" /></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn" onclick="saveCfg()">💾 Salvar</button></div>
+      <p class="reason">O console usa essas chaves para assinar replicações e alertas de teste. Nunca exponha chaves reais em máquina compartilhada.</p>
+    </div>
+  </section>
+</main>
+<footer>Quantum Mirror · <a href="/mirror">dashboard público</a> · <a href="/api/audit/verify">auditoria</a> · <a href="/api/integrations">integrações</a></footer>
+<div class="toast" id="toast"></div>
+<script>
+const $=id=>document.getElementById(id);
+const cfg={get mirror(){return localStorage.getItem('qm-mirror')||'mirror_public_readonly_2026'},get secret(){return localStorage.getItem('qm-secret')||'quantum_mirror_tv_secret_2026'}};
+function saveCfg(){localStorage.setItem('qm-mirror',$('cfg-mirror').value||cfg.mirror);localStorage.setItem('qm-secret',$('cfg-secret').value||cfg.secret);toast('Chaves salvas no navegador.');buildTvPayload();}
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',4000)}
+// tabs
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));$('t-'+b.dataset.t).classList.add('active');if(b.dataset.t==='market')drawMarket();if(b.dataset.t==='audit')loadAudit();});
+async function j(u,o){const r=await fetch(u,o);if(!r.ok)throw new Error((await r.text()).slice(0,200));return r.json()}
+const BOTMETA={};
+async function refresh(){
+  try{
+    const s=await j('/mirror/status');
+    $('b-conn').textContent=s.running?'● AO VIVO':'○ pausado';$('b-conn').className='badge '+(s.running?'ok':'warn');
+    $('b-balance').textContent='💰 $'+s.stats.balance.toFixed(2)+' ('+(s.stats.totalPnl>=0?'+':'')+s.stats.totalPnl.toFixed(2)+')';
+    $('b-venue').textContent='venue: '+s.venue;$('b-venue').className='badge '+(s.venue==='paper'?'':'warn');
+    $('b-data').textContent='dados: '+(s.dataQuality==='live'?'reais':'sintéticos');$('b-data').className='badge '+(s.dataQuality==='live'?'ok':'warn');
+    $('b-audit').textContent='auditoria: '+(s.audit.ok?`íntegra (${s.audit.blocks})`:'QUEBRADA');$('b-audit').className='badge '+(s.audit.ok?'ok':'bad');
+    const st=s.stats;
+    $('stats').innerHTML=[['Saldo','$'+st.balance.toFixed(2),''],['PnL',(st.totalPnl>=0?'+':'')+st.totalPnl.toFixed(4),st.totalPnl>=0?'up':'down'],['Retorno',st.returnPct+'%',st.returnPct>=0?'up':'down'],['Trades',st.trades,''],['Win Rate',st.winRate+'%',''],['Sharpe',st.sharpe,''],['Profit Factor',st.profitFactor,''],['Abertas',st.openPositions,'']]
+      .map(([a,b,c])=>`<div class="stat"><b class="${c}">${b}</b><small>${a}</small></div>`).join('');
+    $('open').innerHTML=s.open.map(t=>`<tr><td>${t.botId}</td><td><span class="pill ${t.direction.toLowerCase()}">${t.direction}</span></td><td>${t.symbol}</td><td>${t.entryPrice}</td><td>${t.tpPrice}</td><td>${t.slPrice}</td><td>${t.quantity}</td><td>${t.venue}</td><td><code>${t.auditCode||'—'}</code></td><td><button class="btn" onclick="rep('${t.id}')">replicar</button></td></tr>`).join('')||'<tr><td colspan="10" style="color:var(--mut)">sem posições abertas — bots avaliando…</td></tr>';
+    const m=await j('/mirror/trades?limit=15');
+    $('closed').innerHTML=m.closed.map(t=>`<tr><td>${t.botId}</td><td><span class="pill ${t.direction.toLowerCase()}">${t.direction}</span></td><td>${t.symbol}</td><td>${t.entryPrice} → ${t.exitPrice}</td><td class="${t.pnl>=0?'up':'down'}">${t.pnl>=0?'+':''}${t.pnl}</td><td>${t.exitReason}</td><td><code>${t.exitAuditCode||'—'}</code></td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--mut)">nenhum trade fechado ainda</td></tr>';
+    renderBots(s.lastSignals||{});
+  }catch(e){$('b-conn').textContent='○ offline';$('b-conn').className='badge bad';}
+}
+async function loadBots(){const{bots}=await j('/api/bots');bots.forEach(b=>BOTMETA[b.id]=b);renderBots({});}
+function renderBots(signals){
+  $('botcards').innerHTML=Object.values(BOTMETA).map(b=>{
+    const s=signals[b.id];
+    return `<div class="card botcard"><h2>#${b.rank} ${b.name} · ${b.symbol} ${b.timeframe}</h2>
+    <p class="reason">${b.description}</p>
+    <p style="margin:8px 0">Auditado: <b class="up">Win ${b.winRateAudited}%</b> · Sharpe ${b.sharpeAudited} · TP ${b.tpRatio}x/SL ${b.slRatio}x · risco ${b.riskPercent}%</p>
+    ${s?`<p>Sinal atual: <span class="pill ${s.direction.toLowerCase()}">${s.direction}</span> conf ${(s.confidence*100).toFixed(0)}% ${s.vetoed?'<span class="pill short">VETO</span>':''}</p>
+    <p class="reason">${(s.reasons||[]).join(' · ')||'—'}${s.vetoReason?'<br>⛔ '+s.vetoReason:''}</p>
+    <p class="reason">entrada ~${s.entryHint} · stop ${s.stopHint} · alvo ${s.takeProfitHint}</p>`:'<p class="reason">aguardando primeiro ciclo do runner…</p>'}
+    <div style="margin-top:8px"><button class="btn" onclick="quickTv('${b.id}','buy')">Testar BUY</button><button class="btn red" onclick="quickTv('${b.id}','sell')">Testar SELL</button></div></div>`;
+  }).join('');
+}
+async function rep(id){
+  try{const r=await j('/mirror/replicate/'+id,{method:'POST',headers:{'Content-Type':'application/json','x-mirror-key':cfg.mirror},body:JSON.stringify({venue:'paper',sizeMultiplier:1})});
+    toast('✅ Replicado: '+r.replicatedTradeId+' ['+r.auditCode+']');refresh();
+  }catch(e){toast('❌ Falha ao replicar: '+e.message)}
+}
+// ---- mercado ----
+function emaArr(v,p){const k=2/(p+1);let o=[],prev=v[0];v.forEach((x,i)=>{prev=i?x*k+prev*(1-k):x;o.push(prev)});return o}
+async function drawMarket(){
+  const sym=$('m-sym').value,int=$('m-int').value;
+  try{
+    const{price}=await j('/api/market/price?symbol='+encodeURIComponent(sym));
+    $('m-price').textContent='$'+Number(price).toLocaleString('en-US',{maximumFractionDigits:2});
+    const{quality,candles}=await j(`/api/market/candles?symbol=${encodeURIComponent(sym)}&interval=${int}`);
+    $('m-info').textContent=`${candles.length} candles · fonte: ${quality==='live'?'Binance (tempo real)':'sintético (sem rede)'}`;
+    const cv=$('chart'),cx=cv.getContext('2d');cx.clearRect(0,0,cv.width,cv.height);
+    const data=candles.slice(-120),cl=data.map(c=>c.close);
+    const e20=emaArr(cl,20),e50=emaArr(cl,50);
+    let lo=Math.min(...data.map(c=>c.low)),hi=Math.max(...data.map(c=>c.high));const pad=(hi-lo)*.08||1;lo-=pad;hi+=pad;
+    const X=i=>20+i*(cv.width-40)/data.length,Y=p=>cv.height-20-(p-lo)/(hi-lo)*(cv.height-40);
+    cx.strokeStyle='#1f2a4d';for(let g=0;g<=4;g++){const p=lo+(hi-lo)*g/4;cx.beginPath();cx.moveTo(0,Y(p));cx.lineTo(cv.width,Y(p));cx.stroke();cx.fillStyle='#8fa0c2';cx.font='11px sans-serif';cx.fillText(p.toFixed(2),4,Y(p)-3);}
+    const w=(cv.width-40)/data.length;
+    data.forEach((c,i)=>{const up=c.close>=c.open;cx.strokeStyle=cx.fillStyle=up?'#14b8a6':'#ef4444';cx.beginPath();cx.moveTo(X(i)+w/2,Y(c.high));cx.lineTo(X(i)+w/2,Y(c.low));cx.stroke();const t=Y(Math.max(c.open,c.close)),h=Math.max(1,Y(Math.min(c.open,c.close))-t);cx.fillRect(X(i)+1,t,w-2,h);});
+    const line=(arr,col)=>{cx.strokeStyle=col;cx.lineWidth=1.5;cx.beginPath();arr.forEach((v,i)=>{i?cx.lineTo(X(i)+w/2,Y(v)):cx.moveTo(X(i)+w/2,Y(v))});cx.stroke();cx.lineWidth=1};
+    line(e20,'#f59e0b');line(e50,'#60a5fa');
+    cx.fillStyle='#f59e0b';cx.fillText('— EMA20',cv.width-120,16);cx.fillStyle='#60a5fa';cx.fillText('— EMA50',cv.width-120,30);
+  }catch(e){$('m-info').textContent='Erro: '+e.message}
+}
+// ---- integrações ----
+async function loadInteg(){
+  try{const g=await j('/api/integrations');
+    $('live-flag').innerHTML=g.live?'<span class="pill short">LIVE</span>':'<span class="pill long">PAPER-SAFE</span>';
+    const st=s=>s==='ready'?'<span class="pill long">ready</span>':s==='stub'?'<span class="pill flat">stub</span>':'<span class="pill short">sem credencial</span>';
+    $('i-brokers').innerHTML=g.brokers.map(b=>`<tr><td><code>${b.id}</code></td><td>${b.name}</td><td>${st(b.status)}</td><td>${b.testnet?'✅':'—'}</td><td>${b.live?'🔴 SIM':'—'}</td></tr>`).join('');
+    $('i-wallets').innerHTML=g.wallets.map(w=>`<tr><td>${w.name}</td><td>${st(w.status)}</td><td><code>${w.connect}</code></td><td>${w.chains.join(', ')}</td></tr>`).join('');
+    $('i-chains').innerHTML=g.chains.map(c=>`<tr><td>${c.name}</td><td>${c.kind}</td><td>${st(c.status)}</td><td>${c.dex}</td></tr>`).join('');
+  }catch(e){}
+}
+// ---- TV ----
+const SYM={'sol-breakout-30m':['SOL/USDT','30m'],'eth-trendwave-10m':['ETH/USDT','10m'],'regime-desk-5m':['BTC/USDT','5m'],'orb-mc-15m':['BTC/USDT','15m']};
+function buildTvPayload(){
+  const b=$('tv-bot').value;if(!SYM[b])return;
+  $('tv-payload').value=JSON.stringify({secret:cfg.secret,bot_id:b,symbol:SYM[b][0],action:$('tv-action').value,timeframe:SYM[b][1],order_id:'TV-'+b.slice(0,3)+'-'+Date.now(),timestamp:Math.floor(Date.now()/1000)},null,2);
+  $('tv-url').textContent=location.origin+'/tv/webhook';
+}
+async function sendTv(){
+  try{const r=await j('/tv/webhook',{method:'POST',headers:{'Content-Type':'application/json'},body:$('tv-payload').value});
+    $('tv-resp').textContent=JSON.stringify(r,null,2);toast(r.processed?'✅ Alerta executado!':'⚠️ Alerta rejeitado: '+r.status);refresh();
+  }catch(e){$('tv-resp').textContent='Erro: '+e.message}
+}
+async function quickTv(bot,action){$('tv-bot').value=bot;$('tv-action').value=action;buildTvPayload();document.querySelector('[data-t="tv"]').click();await sendTv();}
+async function loadPine(){try{$('pine-code').textContent=await(await fetch('pinescript/'+$('pine-sel').value)).text()}catch(e){$('pine-code').textContent='Erro: '+e.message}}
+function copyPine(){navigator.clipboard.writeText($('pine-code').textContent).then(()=>toast('Pine Script copiado!'))}
+// ---- auditoria ----
+async function verifyAudit(){try{const v=await j('/api/audit/verify');$('audit-res').innerHTML=v.ok?`<span class="pill long">ÍNTEGRA · ${v.blocks} blocos</span>`:`<span class="pill short">QUEBRADA em #${v.brokenAt}</span>`}catch(e){$('audit-res').textContent='erro'}}
+async function loadAudit(){try{const rows=await j('/api/audit/recent?limit=60');
+  $('audit-rows').innerHTML=rows.map(b=>`<tr><td>${b.seq}</td><td>${b.ts.slice(11,19)}</td><td><code>${b.kind}</code></td><td><code>${b.auditCode}</code></td><td><code>${b.hash.slice(0,12)}…</code></td><td class="reason">${JSON.stringify(b.payload).slice(0,120)}</td></tr>`).join('');
+  }catch(e){}}
+// ---- feed SSE ----
+const es=new EventSource('/mirror/feed');
+es.onmessage=ev=>{try{const d=JSON.parse(ev.data);const el=document.createElement('div');const t=d.trade||{};
+  el.innerHTML=d.type==='heartbeat'?`💓 ${d.ts.slice(11,19)} · saldo $${d.stats.balance} · PnL ${d.stats.totalPnl}`:`${d.type==='trade_open'?'🟢 ABERTURA':'🔴 FECHAMENTO'} <b>${t.botId||''}</b> ${t.direction||''} ${t.symbol||''} @ ${t.entryPrice||t.exitPrice||''} <code>${d.auditCode||''}</code>`;
+  const f=$('feed');f.prepend(el);while(f.children.length>80)f.lastChild.remove();}catch(e){}};
+// init
+$('cfg-mirror').value=cfg.mirror;$('cfg-secret').value=cfg.secret;
+$('tv-bot').onchange=buildTvPayload;$('tv-action').onchange=buildTvPayload;
+loadBots();refresh();loadInteg();buildTvPayload();loadPine();setInterval(refresh,20000);
+</script>
+</body>
+</html>

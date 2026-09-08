@@ -1,0 +1,49 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════
+// QUANTUM MIRROR #1 — SOL Momentum Breakout (30m)
+// Win 76.5% • Sharpe 0.75 • TP 2.5R / SL 1R • risco 0.5%
+// Alerta → POST https://SEU-HOST/tv/webhook com a Message abaixo.
+// ── ALERT MESSAGE (colar no TradingView) ──
+// {"secret":"quantum_mirror_tv_secret_2026","bot_id":"sol-breakout-30m","symbol":"SOL/USDT","action":"{{strategy.order.action}}","price":{{close}},"timeframe":"30m","order_id":"TV-sol-{{timenow}}","timestamp":{{timenow}}}
+// ═══════════════════════════════════════════════════════════════════
+strategy("QM #1 SOL Momentum Breakout 30m", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=5)
+
+emaLen   = input.int(50, "EMA")
+volLen   = input.int(20, "MM Volume")
+volMult  = input.float(1.5, "Multiplicador Volume", step=0.1)
+sqzLen   = input.int(20, "Janela Squeeze")
+atrLen   = input.int(14, "ATR")
+tpR      = input.float(2.5, "TP (R)")
+trailMul = input.float(2.0, "Trailing ATR x")
+
+ema50  = ta.ema(close, emaLen)
+vma    = ta.sma(volume, volLen)
+basis  = ta.sma(close, sqzLen)
+dev    = ta.stdev(close, sqzLen)
+bw     = (2 * dev) / basis
+sqzLine = ta.percentile_linear_interpolation(bw, sqzLen * 2.5, 20)
+squeezed = bw[1] <= sqzLine
+expanded = bw > bw[1]
+volOk   = volume >= vma * volMult
+atrV    = ta.atr(atrLen)
+
+longSig  = squeezed and expanded and volOk and close > ema50
+shortSig = squeezed and expanded and volOk and close < ema50
+
+if longSig
+    sl = low
+    risk = math.max(close - sl, atrV)
+    strategy.entry("L", strategy.long)
+    strategy.exit("LX", "L", loss=math.max(close - sl, atrV * 0.5), profit=risk * tpR, trail_points=risk * trailMul, trail_offset=atrV)
+if shortSig
+    sl = high
+    risk = math.max(sl - close, atrV)
+    strategy.entry("S", strategy.short)
+    strategy.exit("SX", "S", loss=math.max(sl - close, atrV * 0.5), profit=risk * tpR, trail_points=risk * trailMul, trail_offset=atrV)
+
+plot(ema50, "EMA50", color.orange)
+bgcolor(squeezed ? color.new(color.purple, 90) : na)
+plotshape(longSig, style=shape.triangleup, location=location.belowbar, color=color.teal, size=size.small)
+plotshape(shortSig, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)
+alertcondition(longSig, "QM SOL Long", "LONG breakout")
+alertcondition(shortSig, "QM SOL Short", "SHORT breakdown")

@@ -1,0 +1,56 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════
+// QUANTUM MIRROR #3 — Multi-Agent Regime Desk (5m)
+// Win 63.1% • Sharpe 0.18 • TP 2.0R / SL 1R • risco 0.5% • Red Team veto
+// Alerta → POST https://SEU-HOST/tv/webhook com a Message abaixo.
+// ── ALERT MESSAGE (colar no TradingView) ──
+// {"secret":"quantum_mirror_tv_secret_2026","bot_id":"regime-desk-5m","symbol":"BTC/USDT","action":"{{strategy.order.action}}","price":{{close}},"timeframe":"5m","order_id":"TV-desk-{{timenow}}","timestamp":{{timenow}}}
+// ═══════════════════════════════════════════════════════════════════
+strategy("QM #3 Regime Desk 5m", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=5)
+
+adxLen   = input.int(14, "ADX")
+trendAdx = input.int(22, "ADX tendência")
+chopAdx  = input.int(18, "ADX chop")
+maxCost  = input.float(0.8, "Teto custo % (Red Team)")
+maxVol   = input.float(3.0, "Teto volatilidade % (Red Team)")
+tpR      = input.float(2.0, "TP (R)")
+
+ema50 = ta.ema(close, 50)
+[plus, minus, adxV] = ta.dmi(adxLen, adxLen)
+rsiV = ta.rsi(close, 14)
+atrV = ta.atr(14)
+slope = (ema50 - ema50[5]) / ema50[5]
+
+isTrend = adxV >= trendAdx and math.abs(slope) > 0.0005
+isMR    = adxV < chopAdx
+isChop  = not isTrend and not isMR
+
+rngH = ta.highest(high, 20)
+rngL = ta.lowest(low, 20)
+posRange = (close - rngL) / math.max(rngH - rngL, 1e-9)
+
+bullScore = (close > ema50 ? 25 : 5) + (rsiV > 50 and rsiV < 70 ? 20 : 8) + (posRange < 0.4 ? 20 : 8) + (slope > 0 ? 20 : 0)
+bearScore = (close < ema50 ? 25 : 5) + (rsiV < 50 and rsiV > 30 ? 20 : 8) + (posRange > 0.6 ? 20 : 8) + (slope < 0 ? 20 : 0)
+
+// Red Team: veto mandatório (custo estimado 0.15% + vol ATR%)
+estCost = 0.15
+implVol = atrV / close * 100
+veto = estCost > maxCost or implVol > maxVol
+
+longSig  = not veto and ((isTrend and bullScore >= bearScore) or (isMR and posRange < 0.35))
+shortSig = not veto and ((isTrend and bearScore > bullScore) or (isMR and posRange > 0.65))
+
+if longSig
+    strategy.entry("L", strategy.long)
+    strategy.exit("LX", "L", profit=atrV * tpR, loss=atrV)
+if shortSig
+    strategy.entry("S", strategy.short)
+    strategy.exit("SX", "S", profit=atrV * tpR, loss=atrV)
+
+plot(ema50, "EMA50", color.orange)
+bgcolor(isChop ? color.new(color.gray, 90) : isTrend ? color.new(color.teal, 92) : color.new(color.blue, 92))
+bgcolor(veto ? color.new(color.red, 85) : na)
+plotshape(longSig, style=shape.triangleup, location=location.belowbar, color=color.teal, size=size.small)
+plotshape(shortSig, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)
+alertcondition(longSig, "QM Desk Long", "LONG desk")
+alertcondition(shortSig, "QM Desk Short", "SHORT desk")

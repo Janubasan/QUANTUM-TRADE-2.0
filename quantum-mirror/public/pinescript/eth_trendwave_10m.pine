@@ -1,0 +1,50 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════
+// QUANTUM MIRROR #2 — ETH Quantum Trend Wave (10m)
+// Win 73.4% • Sharpe 0.22 • TP 2.2R / SL 1R • risco 0.5%
+// Alerta → POST https://SEU-HOST/tv/webhook com a Message abaixo.
+// ── ALERT MESSAGE (colar no TradingView) ──
+// {"secret":"quantum_mirror_tv_secret_2026","bot_id":"eth-trendwave-10m","symbol":"ETH/USDT","action":"{{strategy.order.action}}","price":{{close}},"timeframe":"10m","order_id":"TV-eth-{{timenow}}","timestamp":{{timenow}}}
+// ═══════════════════════════════════════════════════════════════════
+strategy("QM #2 ETH Quantum Trend Wave 10m", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=5)
+
+fastLen = input.int(20, "EMA rápida")
+slowLen = input.int(50, "EMA lenta")
+adxLen  = input.int(14, "ADX")
+adxMin  = input.int(18, "ADX mínimo")
+rsiLen  = input.int(14, "RSI")
+tpR     = input.float(2.2, "TP (R)")
+
+emaF = ta.ema(close, fastLen)
+emaS = ta.ema(close, slowLen)
+vwapD = ta.vwap(hlc3)
+[plus, minus, adxV] = ta.dmi(adxLen, adxLen)
+rsiV = ta.rsi(close, rsiLen)
+
+bullStack = emaF > emaS and emaS > vwapD and close > vwapD
+bearStack = emaF < emaS and emaS < vwapD and close < vwapD
+trendOk = adxV >= adxMin
+// Divergência de baixa simples: topo maior no preço, topo menor no RSI
+bearDiv = high > ta.highest(high, 10)[1] and rsiV < ta.highest(rsiV, 10)[1]
+bullDiv = low < ta.lowest(low, 10)[1] and rsiV > ta.lowest(rsiV, 10)[1]
+
+longSig  = bullStack and trendOk and not bearDiv
+shortSig = bearStack and trendOk and not bullDiv
+
+atrV = ta.atr(14)
+if longSig
+    strategy.entry("L", strategy.long)
+    strategy.exit("LX1", "L", qty_percent=50, profit=atrV * 1.0, loss=atrV)
+    strategy.exit("LX2", "L", profit=atrV * tpR, loss=atrV)
+if shortSig
+    strategy.entry("S", strategy.short)
+    strategy.exit("SX1", "S", qty_percent=50, profit=atrV * 1.0, loss=atrV)
+    strategy.exit("SX2", "S", profit=atrV * tpR, loss=atrV)
+
+plot(emaF, "EMA20", color.teal)
+plot(emaS, "EMA50", color.orange)
+plot(vwapD, "VWAP", color.blue)
+plotshape(longSig, style=shape.triangleup, location=location.belowbar, color=color.teal, size=size.small)
+plotshape(shortSig, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)
+alertcondition(longSig, "QM ETH Long", "LONG wave")
+alertcondition(shortSig, "QM ETH Short", "SHORT wave")
