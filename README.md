@@ -244,6 +244,19 @@ git push -u origin main --force
 
 ---
 
+## 🧾 Automação de Faturamento (n8n)
+
+O projeto inclui um workflow completo de **Gestão de Faturas & Pagamentos** para o **n8n**, orquestrando todo o ciclo financeiro fora da aplicação: emissão de faturas com PDF (PDFbro), armazenamento em Google Drive, e-mails transacionais (Resend), baixa de pagamentos e estornos — com Google Sheets como livro-razão, autenticação por API key, proteção contra eventos duplicados (idempotência) e resposta estruturada para a aplicação que disparou o evento.
+
+```bash
+# Importar no n8n
+Workflows → Import from File → n8n/workflows/invoice-payment-management.json
+```
+
+Documentação completa, contrato da API e script de teste: **[`n8n/README.md`](n8n/README.md)**
+
+---
+
 ## 📄 Créditos e Autoria
 
 Plataforma **JANUTRADE** concebida, arquitetada e desenvolvida por **Januario Leal** (`januarioleal@gmail.com`).

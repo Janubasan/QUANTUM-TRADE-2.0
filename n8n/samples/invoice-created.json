@@ -1,0 +1,17 @@
+{
+  "eventType": "invoice.created",
+  "invoice": {
+    "invoiceId": "INV-2026-0001",
+    "customerId": "CUST-042",
+    "customerName": "Acme Corp",
+    "customerEmail": "billing@acme-corp.com",
+    "currency": "USD",
+    "issueDate": "2026-09-09",
+    "dueDate": "2026-09-23",
+    "items": [
+      { "description": "Trading bot license — Pro plan", "quantity": 1, "unitPrice": 149.0 },
+      { "description": "Market data add-on", "quantity": 3, "unitPrice": 449.9 }
+    ],
+    "notes": "Thank you for your business"
+  }
+}
