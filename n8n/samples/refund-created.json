@@ -1,0 +1,12 @@
+{
+  "eventType": "refund.created",
+  "refund": {
+    "refundId": "REF-2026-0001",
+    "invoiceId": "INV-2026-0001",
+    "paymentId": "PAY-2026-0001",
+    "amount": 400.0,
+    "currency": "USD",
+    "reason": "duplicate_charge",
+    "refundedAt": "2026-09-11T09:00:00Z"
+  }
+}

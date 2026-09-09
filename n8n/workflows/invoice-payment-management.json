@@ -1,0 +1,2502 @@
+{
+  "name": "Invoice & Payment Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-payment-management",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f32bda07-f2fd-6790-2c33-5af1e75b3804",
+      "name": "Invoice & Payment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        0
+      ],
+      "webhookId": "17f8c7b6-4d90-a2d9-4f71-f12a2e76404d"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// 1) API-key authentication (default deny)\n//    The caller must send header  x-api-key: <INVOICE_WEBHOOK_API_KEY>\n// 2) Payload validation + normalization for the event router\n// ─────────────────────────────────────────────────────────────────\nconst item = $input.first().json;\nconst headers = item.headers || {};\nconst body = item.body || {};\n\nconst errors = [];\n\n// --- API key check (default deny: nothing passes until the env var is set) ---\nconst providedKey = typeof headers['x-api-key'] === 'string' ? headers['x-api-key'].trim() : '';\nconst expectedKey = typeof $env.INVOICE_WEBHOOK_API_KEY === 'string' ? $env.INVOICE_WEBHOOK_API_KEY : '';\nconst authOk = Boolean(expectedKey) && providedKey === expectedKey;\nif (!authOk) {\n  errors.push('Invalid or missing API key. Send the header \"x-api-key\" with the value of the INVOICE_WEBHOOK_API_KEY environment variable.');\n}\n\n// --- Event type + payload extraction ---\nconst eventTypeRaw = body.eventType || body.event || body.type;\nconst eventType = typeof eventTypeRaw === 'string' ? eventTypeRaw.trim().toLowerCase() : '';\n\nconst KNOWN_EVENTS = ['invoice.created', 'payment.received', 'refund.created'];\nif (!KNOWN_EVENTS.includes(eventType)) {\n  errors.push(`Unsupported eventType \"${eventType}\". Expected one of: ${KNOWN_EVENTS.join(', ')}.`);\n}\n\nconst payload = {};\nif (eventType === 'invoice.created') {\n  const inv = body.invoice || {};\n  payload.invoice = inv;\n  if (!inv.invoiceId) errors.push('invoice.invoiceId is required.');\n  if (!inv.customerEmail) errors.push('invoice.customerEmail is required.');\n  const hasItems = Array.isArray(inv.items) && inv.items.length > 0;\n  const hasTotal = Number(inv.totalAmount) > 0;\n  if (!hasItems && !hasTotal) errors.push('invoice.items[] (or invoice.totalAmount) is required.');\n} else if (eventType === 'payment.received') {\n  const pay = body.payment || {};\n  payload.payment = pay;\n  if (!pay.paymentId) errors.push('payment.paymentId is required.');\n  if (!pay.invoiceId) errors.push('payment.invoiceId is required.');\n  if (!(Number(pay.amount) > 0)) errors.push('payment.amount must be a number greater than zero.');\n} else if (eventType === 'refund.created') {\n  const ref = body.refund || {};\n  payload.refund = ref;\n  if (!ref.refundId) errors.push('refund.refundId is required.');\n  if (!ref.invoiceId) errors.push('refund.invoiceId is required.');\n  if (!(Number(ref.amount) > 0)) errors.push('refund.amount must be a number greater than zero.');\n}\n\n// Anything invalid is rerouted to the Switch fallback output -> HTTP 400\nconst normalizedEventType = errors.length === 0 ? eventType : 'invalid';\n\nreturn [{\n  json: {\n    authOk,\n    eventType: normalizedEventType,\n    originalEventType: eventType,\n    payload,\n    errors,\n    receivedAt: new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "0e168b26-b0db-0f56-34dc-1441981279bd",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9efa8eda-85e2-5a78-d97c-54b69d45fd4e",
+              "leftValue": "={{ $json.authOk }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ab215cb3-4e75-8bc3-7829-86c98a628cb2",
+      "name": "API Key Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, status: 'unauthorized', message: 'Invalid or missing API key. Send the header x-api-key with the value configured as INVOICE_WEBHOOK_API_KEY.' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "b44416b9-8e1e-d537-0a61-23f39d7a8aff",
+      "name": "Respond: Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1040,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "00336670-bcf2-420c-ea02-98d455f48f4b",
+                    "leftValue": "={{ $json.eventType }}",
+                    "rightValue": "invoice.created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Invoice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "35af7f02-e13f-e58f-bf14-17510c5b3780",
+                    "leftValue": "={{ $json.eventType }}",
+                    "rightValue": "payment.received",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Payment"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8ee490da-a0af-2007-8481-e382fd79a966",
+                    "leftValue": "={{ $json.eventType }}",
+                    "rightValue": "refund.created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Refund"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Invalid"
+        }
+      },
+      "id": "63d24df8-923f-8bb6-f767-392518c885f4",
+      "name": "Route by Event Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, status: 'invalid_request', errors: $json.errors }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "1bf4617a-6cd1-1689-2a34-7d243062147c",
+      "name": "Respond: Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -800,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Invoice ID",
+              "lookupValue": "={{ $json.payload.invoice.invoiceId }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "08402298-8ea6-daf6-ae94-82835ffa3ee0",
+      "name": "Lookup Invoice (Duplicate Check)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -800,
+        -440
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d9cf314b-65e2-fe0e-7959-02b28e31c969",
+              "leftValue": "={{ $json['Invoice ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "640dcbe7-1023-47e3-53c4-2d47f96257d9",
+      "name": "Invoice Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -560,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, status: 'duplicate', message: 'Invoice already exists - skipped to prevent duplicate processing and duplicate emails.', invoiceId: $json['Invoice ID'], existingStatus: $json['Status'] }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "770afd35-f2cf-a624-0d50-55d0f666572c",
+      "name": "Respond: Duplicate Invoice",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -320,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Build Invoice Record\n// Normalizes the invoice payload, computes the totals and renders:\n//  - invoiceHtml      → full standalone HTML document sent to PDFbro\n//  - lineItemsTable   → items table reused in the customer email\n// ─────────────────────────────────────────────────────────────────\nconst src = $('Validate Request').first().json.payload.invoice;\n\nconst esc = (v) => String(v ?? '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;');\n\nconst num = (v) => {\n  const n = Number(String(v ?? '').replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : 0;\n};\nconst money = (v) => num(v).toFixed(2);\n\nconst brand = $env.INVOICE_BRAND_NAME || 'Your Company';\nconst supportEmail = $env.SUPPORT_EMAIL || 'billing@example.com';\n\nconst items = Array.isArray(src.items) ? src.items : [];\nlet totalAmount = num(src.totalAmount);\nif (items.length > 0) {\n  // Line items win when provided: total = Σ quantity × unit price\n  totalAmount = items.reduce((sum, it) => sum + num(it.quantity || 1) * num(it.unitPrice), 0);\n}\n\nconst now = new Date();\nconst invoiceId = String(src.invoiceId);\nconst issueDate = src.issueDate || now.toISOString().slice(0, 10);\nconst dueDate = src.dueDate || issueDate;\nconst currency = String(src.currency || 'USD').toUpperCase();\n\nconst lineItemsRows = items.map((it) => {\n  const qty = num(it.quantity || 1);\n  const price = num(it.unitPrice);\n  return `\n    <tr>\n      <td style=\"padding:10px 8px;border-bottom:1px solid #e5e7eb;\">${esc(it.description || 'Item')}</td>\n      <td style=\"padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;\">${qty}</td>\n      <td style=\"padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;\">${currency} ${money(price)}</td>\n      <td style=\"padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;\"><strong>${currency} ${money(qty * price)}</strong></td>\n    </tr>`;\n}).join('');\n\nconst lineItemsTable = items.length > 0\n  ? `\n  <table style=\"width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;\">\n    <thead>\n      <tr style=\"background:#f8fafc;\">\n        <th style=\"padding:10px 8px;border-bottom:2px solid #0f172a;text-align:left;\">Description</th>\n        <th style=\"padding:10px 8px;border-bottom:2px solid #0f172a;text-align:center;\">Qty</th>\n        <th style=\"padding:10px 8px;border-bottom:2px solid #0f172a;text-align:right;\">Unit price</th>\n        <th style=\"padding:10px 8px;border-bottom:2px solid #0f172a;text-align:right;\">Amount</th>\n      </tr>\n    </thead>\n    <tbody>${lineItemsRows}</tbody>\n  </table>`\n  : '';\n\nconst invoiceHtml = `<!DOCTYPE html>\n<html>\n  <head>\n    <meta charset=\"utf-8\" />\n    <title>Invoice ${esc(invoiceId)}</title>\n  </head>\n  <body style=\"margin:0;padding:40px;font-family:Helvetica,Arial,sans-serif;color:#0f172a;\">\n    <table style=\"width:100%;border-collapse:collapse;\">\n      <tr>\n        <td style=\"vertical-align:top;\">\n          <div style=\"font-size:22px;font-weight:700;\">${esc(brand)}</div>\n          <div style=\"font-size:12px;color:#64748b;\">${esc(supportEmail)}</div>\n        </td>\n        <td style=\"vertical-align:top;text-align:right;\">\n          <div style=\"font-size:28px;font-weight:700;\">INVOICE</div>\n          <div style=\"font-size:14px;color:#64748b;\">#${esc(invoiceId)}</div>\n        </td>\n      </tr>\n    </table>\n\n    <table style=\"width:100%;border-collapse:collapse;margin-top:32px;font-size:14px;\">\n      <tr>\n        <td style=\"vertical-align:top;width:50%;\">\n          <div style=\"color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;\">Billed to</div>\n          <div style=\"font-weight:600;\">${esc(src.customerName || src.customerEmail)}</div>\n          <div>${esc(src.customerEmail)}</div>\n          ${src.customerId ? `<div style=\"color:#64748b;\">Customer ID: ${esc(src.customerId)}</div>` : ''}\n        </td>\n        <td style=\"vertical-align:top;text-align:right;\">\n          <div style=\"color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;\">Issue date</div>\n          <div style=\"font-weight:600;\">${esc(issueDate)}</div>\n          <div style=\"margin-top:8px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;\">Due date</div>\n          <div style=\"font-weight:600;\">${esc(dueDate)}</div>\n        </td>\n      </tr>\n    </table>\n\n    ${lineItemsTable}\n\n    <table style=\"width:300px;border-collapse:collapse;margin-left:auto;font-size:14px;\">\n      <tr>\n        <td style=\"padding:8px 0;color:#64748b;\">Total amount</td>\n        <td style=\"padding:8px 0;text-align:right;font-size:20px;font-weight:700;\">${currency} ${money(totalAmount)}</td>\n      </tr>\n    </table>\n\n    ${src.notes ? `<p style=\"margin-top:32px;font-size:13px;color:#475569;\"><strong>Notes:</strong> ${esc(src.notes)}</p>` : ''}\n\n    <p style=\"margin-top:48px;font-size:12px;color:#94a3b8;\">Invoice ${esc(invoiceId)} &middot; Generated ${now.toISOString()} &middot; ${esc(brand)}</p>\n  </body>\n</html>`;\n\nreturn [{\n  json: {\n    invoiceId,\n    customerId: String(src.customerId || ''),\n    customerName: String(src.customerName || ''),\n    customerEmail: String(src.customerEmail),\n    issueDate,\n    dueDate,\n    currency,\n    totalAmount: Number(money(totalAmount)),\n    amountPaid: 0,\n    balance: Number(money(totalAmount)),\n    status: 'processing',\n    itemCount: items.length,\n    lineItemsTable,\n    invoiceHtml,\n    pdfFileName: `${invoiceId}.pdf`,\n    notes: String(src.notes || ''),\n    brand,\n    supportEmail,\n    createdAt: now.toISOString(),\n  },\n}];"
+      },
+      "id": "648da967-336f-7a06-3820-788b43190ada",
+      "name": "Build Invoice Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice ID": "={{ $json.invoiceId }}",
+            "Customer ID": "={{ $json.customerId }}",
+            "Customer Name": "={{ $json.customerName }}",
+            "Customer Email": "={{ $json.customerEmail }}",
+            "Issue Date": "={{ $json.issueDate }}",
+            "Due Date": "={{ $json.dueDate }}",
+            "Currency": "={{ $json.currency }}",
+            "Total Amount": "={{ $json.totalAmount }}",
+            "Amount Paid": "={{ $json.amountPaid }}",
+            "Balance": "={{ $json.balance }}",
+            "Status": "={{ $json.status }}",
+            "Created At": "={{ $json.createdAt }}",
+            "Updated At": "={{ $json.createdAt }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "8812b73f-1dad-63ac-2714-48f4d639658c",
+      "name": "Create Invoice Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -80,
+        -440
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pdfbro.com/v1/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ html: $json.invoiceHtml, fileName: $json.pdfFileName }) }}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "ab7f3a78-8b69-e339-3ce1-aaf3a0a1d099",
+      "name": "Generate Invoice PDF (PDFbro)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        -640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "PDFbro API key (X-API-Key)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "inputDataFieldName": "data",
+        "name": "={{ $('Build Invoice Record').first().json.pdfFileName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE",
+          "mode": "id"
+        },
+        "options": {
+          "simplifyOutput": false
+        }
+      },
+      "id": "a3f19b50-a65e-fc1a-87dc-e537e0485661",
+      "name": "Upload PDF to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        400,
+        -640
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Drive account (Invoice PDFs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "65992db6-2935-44b3-883a-4c40e881abf9",
+              "name": "pdfUrl",
+              "type": "string",
+              "value": "={{ $json.webViewLink }}"
+            },
+            {
+              "id": "f0ced247-1faf-e651-41ca-ab5e085c4d9c",
+              "name": "pdfDownloadUrl",
+              "type": "string",
+              "value": "={{ $json.webContentLink }}"
+            },
+            {
+              "id": "d23d7ad5-d57f-6855-5c44-85168561035b",
+              "name": "pdfFileId",
+              "type": "string",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "id": "02078393-3846-ead1-2bad-e64260911e16",
+              "name": "pdfGeneratedAt",
+              "type": "string",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "91d4011f-03ce-2220-45f2-caf1f48c391a",
+      "name": "Shape PDF Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        -640
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Build Invoice Email → exact Resend API payload\n// (the next node simply POSTs JSON.stringify($json))\n// ─────────────────────────────────────────────────────────────────\nconst inv = $('Build Invoice Record').first().json;\n\nconst from = $env.RESEND_FROM_EMAIL || 'Invoicing <onboarding@resend.dev>';\nconst to = inv.customerEmail;\nconst greeting = inv.customerName ? `Hi ${inv.customerName},` : 'Hello,';\nconst subject = `Invoice ${inv.invoiceId} from ${inv.brand} — ${inv.currency} ${inv.totalAmount.toFixed(2)}`;\n\nconst html = `\n  <div style=\"font-family:Helvetica,Arial,sans-serif;color:#0f172a;max-width:560px;\">\n    <p>${greeting}</p>\n    <p>Here is your invoice <strong>${inv.invoiceId}</strong>.</p>\n    <p style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;\">\n      <strong>Total: ${inv.currency} ${inv.totalAmount.toFixed(2)}</strong><br />\n      Issue date: ${inv.issueDate} &middot; Due date: ${inv.dueDate}\n    </p>\n    ${inv.lineItemsTable || ''}\n    <p>Please arrange payment by the due date. A PDF copy of this invoice has been generated and archived for your records.</p>\n    ${inv.notes ? `<p><em>${inv.notes}</em></p>` : ''}\n    <p>If you have any questions, just reply to this email.</p>\n    <p>Best regards,<br />${inv.brand}</p>\n  </div>`;\n\nconst text = [\n  greeting,\n  '',\n  `Invoice ${inv.invoiceId}`,\n  `Total: ${inv.currency} ${inv.totalAmount.toFixed(2)}`,\n  `Issue date: ${inv.issueDate}`,\n  `Due date: ${inv.dueDate}`,\n  inv.itemCount > 0 ? `Line items: ${inv.itemCount}` : '',\n  '',\n  'A PDF copy of this invoice has been generated and archived for your records.',\n  '',\n  'Best regards,',\n  inv.brand,\n].filter((line) => line !== '').join('\\n');\n\nreturn [{ json: { from, to, subject, html, text } }];"
+      },
+      "id": "041c2dfd-9ede-016e-85bd-da2cd8612d48",
+      "name": "Build Invoice Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "f022eeae-937b-d47a-2b08-6cf7c34fbe06",
+      "name": "Send Invoice Email (Resend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        -240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Resend API (Authorization: Bearer re_...)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8ad862c0-0c11-1d9f-0698-efbc03c14d1d",
+              "name": "emailId",
+              "type": "string",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "id": "fd3e1821-23bf-d702-9dfe-85abc5be481a",
+              "name": "emailSentAt",
+              "type": "string",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f8f1f62d-321c-86c6-2a6a-5260162bfd86",
+      "name": "Shape Email Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "a52e7de5-4784-5b1d-751a-559fa554e855",
+      "name": "Merge Processing Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice ID": "={{ $('Build Invoice Record').first().json.invoiceId }}",
+            "Status": "processed",
+            "PDF URL": "={{ $json.pdfUrl }}",
+            "PDF File ID": "={{ $json.pdfFileId }}",
+            "Email Sent At": "={{ $json.emailSentAt }}",
+            "Email ID": "={{ $json.emailId }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Invoice ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "71e03901-69f5-0fdf-4367-deeffe54c070",
+      "name": "Update Invoice Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        -440
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "29537b8e-47fc-8a92-5296-0f633147ad74",
+              "name": "success",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "c9220ce5-698a-ac4e-4a0b-0ce2be23b4f2",
+              "name": "status",
+              "type": "string",
+              "value": "processed"
+            },
+            {
+              "id": "09c9b5b0-49dd-7d47-12a0-4d8af5e70d34",
+              "name": "eventType",
+              "type": "string",
+              "value": "invoice.created"
+            },
+            {
+              "id": "ab1b5ec0-76d3-7f01-fa09-d1b687a0deca",
+              "name": "invoiceId",
+              "type": "string",
+              "value": "={{ $('Build Invoice Record').first().json.invoiceId }}"
+            },
+            {
+              "id": "8e850565-67aa-6f1c-9b2d-2371223dec17",
+              "name": "totalAmount",
+              "type": "number",
+              "value": "={{ $('Build Invoice Record').first().json.totalAmount }}"
+            },
+            {
+              "id": "29bf4518-e768-5424-441d-5ba34f2961da",
+              "name": "currency",
+              "type": "string",
+              "value": "={{ $('Build Invoice Record').first().json.currency }}"
+            },
+            {
+              "id": "fc3c69e1-1cda-307e-00fb-5aa07745e4d0",
+              "name": "pdfUrl",
+              "type": "string",
+              "value": "={{ $('Merge Processing Results').first().json.pdfUrl }}"
+            },
+            {
+              "id": "a87c78d4-031f-4339-e486-f6f24f70d204",
+              "name": "emailId",
+              "type": "string",
+              "value": "={{ $('Merge Processing Results').first().json.emailId }}"
+            },
+            {
+              "id": "ff5b5cb0-1b7b-e361-4531-89f03400f969",
+              "name": "emailSentAt",
+              "type": "string",
+              "value": "={{ $('Merge Processing Results').first().json.emailSentAt }}"
+            },
+            {
+              "id": "c8cc73c0-0c15-19aa-8d90-54a7a55fc719",
+              "name": "processedAt",
+              "type": "string",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a41e8351-f78a-09d0-de59-bee6bbee0587",
+      "name": "Build Invoice Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "ed0e0919-78c9-8c3f-bbee-13e20b361814",
+      "name": "Respond: Invoice Processed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1600,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Payments",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Payment ID",
+              "lookupValue": "={{ $json.payload.payment.paymentId }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "7df15ec5-19b0-6060-f1ad-a4a3a8e80fd1",
+      "name": "Lookup Payment (Duplicate Check)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -800,
+        120
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0813bf0e-2bda-c1cb-591a-484794f620a3",
+              "leftValue": "={{ $json['Payment ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c38de4f6-6c78-7b58-5c28-1f29578c1144",
+      "name": "Payment Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -560,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, status: 'duplicate', message: 'Payment already exists - skipped to prevent duplicate processing and duplicate notifications.', paymentId: $json['Payment ID'], invoiceId: $json['Invoice ID'], existingStatus: $json['Status'] }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "342dce41-c485-3455-8dbd-abf5b955dfee",
+      "name": "Respond: Duplicate Payment",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Payments",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Payment ID": "={{ $('Validate Request').first().json.payload.payment.paymentId }}",
+            "Invoice ID": "={{ $('Validate Request').first().json.payload.payment.invoiceId }}",
+            "Amount": "={{ $('Validate Request').first().json.payload.payment.amount }}",
+            "Currency": "={{ $('Validate Request').first().json.payload.payment.currency || 'USD' }}",
+            "Method": "={{ $('Validate Request').first().json.payload.payment.method || '' }}",
+            "Received At": "={{ $('Validate Request').first().json.payload.payment.receivedAt || $now.toISO() }}",
+            "Status": "processing",
+            "Invoice Status After": "",
+            "Email ID": "",
+            "Notes": "",
+            "Created At": "={{ $now.toISO() }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "1f0077c7-9a21-5e32-10c6-81696e715938",
+      "name": "Store Payment Transaction",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -320,
+        120
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Invoice ID",
+              "lookupValue": "={{ $('Validate Request').first().json.payload.payment.invoiceId }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "9b201056-521e-c0b2-a04f-e52f5fc9cae7",
+      "name": "Get Invoice for Payment",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -80,
+        120
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3d2a8ca6-8553-4c7d-c592-234822aa9f9e",
+              "leftValue": "={{ $json['Invoice ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0e1ef7dc-ddcb-8a81-8c60-918186991aa4",
+      "name": "Invoice Found (Payment)?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Payments",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Payment ID": "={{ $('Validate Request').first().json.payload.payment.paymentId }}",
+            "Status": "error",
+            "Notes": "invoice_not_found",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Payment ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "4bcec21c-abee-ab3b-c63c-3ffca27de71e",
+      "name": "Mark Payment Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, status: 'invoice_not_found', message: 'The referenced invoice does not exist in the ledger. The payment row was stored with status=error for reconciliation.', invoiceId: $('Validate Request').first().json.payload.payment.invoiceId, paymentId: $('Validate Request').first().json.payload.payment.paymentId }) }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "95c9fb05-e716-0407-a79f-fe5070c8f12a",
+      "name": "Respond: Payment Invoice Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        640,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Compute Payment Impact\n// Applies the payment to the invoice balance (idempotency is already\n// guaranteed by the duplicate check upstream).\n//  - caps the applied amount at the outstanding balance (overpayment is reported)\n//  - decides whether the invoice is now partially paid or fully paid\n// ─────────────────────────────────────────────────────────────────\nconst row = $input.first().json; // invoice row read from the Invoices tab\nconst payment = $('Validate Request').first().json.payload.payment;\n\nconst num = (v) => {\n  const n = Number(String(v ?? '').replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : 0;\n};\nconst money = (v) => Number(v.toFixed(2));\n\nconst invoiceId = String(row['Invoice ID'] || payment.invoiceId);\nconst currency = String(row['Currency'] || payment.currency || 'USD').toUpperCase();\n\nconst total = num(row['Total Amount']);\nconst paidBefore = num(row['Amount Paid']);\nconst amount = num(payment.amount);\n\nconst paidAfterRaw = paidBefore + amount;\nconst overpaid = Math.max(0, paidAfterRaw - total);\nconst newAmountPaid = money(Math.min(total, paidAfterRaw));\nconst newBalance = money(Math.max(0, total - newAmountPaid));\nconst isFullyPaid = total > 0 && newBalance <= 0.005;\n\nconst invoiceStatusAfter = isFullyPaid\n  ? 'paid'\n  : (newAmountPaid > 0 ? 'partially_paid' : 'open');\n\nreturn [{\n  json: {\n    invoiceId,\n    paymentId: String(payment.paymentId),\n    customerName: String(row['Customer Name'] || ''),\n    customerEmail: String(row['Customer Email'] || ''),\n    currency,\n    invoiceTotal: money(total),\n    amount: money(amount),\n    paidBefore: money(paidBefore),\n    newAmountPaid,\n    newBalance,\n    overpaid: money(overpaid),\n    isFullyPaid,\n    invoiceStatusBefore: String(row['Status'] || ''),\n    invoiceStatusAfter,\n    dueDate: String(row['Due Date'] || ''),\n    method: String(payment.method || ''),\n    receivedAt: payment.receivedAt || new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "1c51633f-0a4a-3038-91f2-466aa686a045",
+      "name": "Compute Payment Impact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice ID": "={{ $json.invoiceId }}",
+            "Amount Paid": "={{ $json.newAmountPaid }}",
+            "Balance": "={{ $json.newBalance }}",
+            "Status": "={{ $json.invoiceStatusAfter }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Invoice ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "197facc3-98f5-bc14-5202-5b43f7015fb1",
+      "name": "Update Invoice Balance",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        640,
+        120
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7bbd3e19-cb43-2a2f-9eb4-786ca0b59f3d",
+              "leftValue": "={{ $json.isFullyPaid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ad53e662-3b4f-5c05-336c-4a15e7b330bb",
+      "name": "Invoice Fully Paid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Build Final Payment Email → exact Resend API payload\n// Sent when this payment settles the invoice in full.\n// ─────────────────────────────────────────────────────────────────\nconst p = $('Compute Payment Impact').first().json;\n\nconst brand = $env.INVOICE_BRAND_NAME || 'Your Company';\nconst from = $env.RESEND_FROM_EMAIL || 'Invoicing <onboarding@resend.dev>';\nconst greeting = p.customerName ? `Hi ${p.customerName},` : 'Hello,';\nconst subject = `Invoice ${p.invoiceId} is fully paid — thank you!`;\n\nconst overpaidNote = p.overpaid > 0\n  ? `<p style=\"color:#b45309;\">Note: your payment exceeded the invoice total by <strong>${p.currency} ${p.overpaid.toFixed(2)}</strong>. Our team will contact you about the excess amount.</p>`\n  : '';\n\nconst html = `\n  <div style=\"font-family:Helvetica,Arial,sans-serif;color:#0f172a;max-width:560px;\">\n    <p>${greeting}</p>\n    <p>Great news — invoice <strong>${p.invoiceId}</strong> is now <strong>fully paid</strong>. 🎉</p>\n    <p style=\"background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;\">\n      Invoice total: ${p.currency} ${p.invoiceTotal.toFixed(2)}<br />\n      This payment: ${p.currency} ${p.amount.toFixed(2)}${p.method ? ` (via ${p.method})` : ''}<br />\n      Outstanding balance: <strong>${p.currency} ${p.newBalance.toFixed(2)}</strong>\n    </p>\n    ${overpaidNote}\n    <p>Thank you for your business! This email serves as your payment confirmation for the full amount.</p>\n    <p>Best regards,<br />${brand}</p>\n  </div>`;\n\nconst text = [\n  greeting,\n  '',\n  `Great news — invoice ${p.invoiceId} is now fully paid.`,\n  '',\n  `Invoice total: ${p.currency} ${p.invoiceTotal.toFixed(2)}`,\n  `This payment: ${p.currency} ${p.amount.toFixed(2)}${p.method ? ` (via ${p.method})` : ''}`,\n  `Outstanding balance: ${p.currency} ${p.newBalance.toFixed(2)}`,\n  p.overpaid > 0 ? `Note: your payment exceeded the invoice total by ${p.currency} ${p.overpaid.toFixed(2)}. Our team will contact you about the excess amount.` : '',\n  '',\n  'Thank you for your business! This email serves as your payment confirmation for the full amount.',\n  '',\n  'Best regards,',\n  brand,\n].filter((line) => line !== '').join('\\n');\n\nreturn [{ json: { from, to: p.customerEmail, subject, html, text } }];"
+      },
+      "id": "2402ffc2-e957-0a9c-fe43-ee96bba2e6b4",
+      "name": "Build Final Payment Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "2dab8e43-9f0d-35e5-2bae-3d25ac577714",
+      "name": "Send Final Payment Email (Resend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        -60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Resend API (Authorization: Bearer re_...)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Build Payment Receipt Email → exact Resend API payload\n// Sent when the invoice still has an outstanding balance.\n// ─────────────────────────────────────────────────────────────────\nconst p = $('Compute Payment Impact').first().json;\n\nconst brand = $env.INVOICE_BRAND_NAME || 'Your Company';\nconst from = $env.RESEND_FROM_EMAIL || 'Invoicing <onboarding@resend.dev>';\nconst greeting = p.customerName ? `Hi ${p.customerName},` : 'Hello,';\nconst subject = `Payment received for invoice ${p.invoiceId} — ${p.currency} ${p.amount.toFixed(2)}`;\n\nconst html = `\n  <div style=\"font-family:Helvetica,Arial,sans-serif;color:#0f172a;max-width:560px;\">\n    <p>${greeting}</p>\n    <p>We confirm receipt of your payment of <strong>${p.currency} ${p.amount.toFixed(2)}</strong>${p.method ? ` (via ${p.method})` : ''} for invoice <strong>${p.invoiceId}</strong>. Thank you!</p>\n    <p style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;\">\n      Invoice total: ${p.currency} ${p.invoiceTotal.toFixed(2)}<br />\n      Amount paid so far: <strong>${p.currency} ${p.newAmountPaid.toFixed(2)}</strong><br />\n      Remaining balance: <strong>${p.currency} ${p.newBalance.toFixed(2)}</strong>${p.dueDate ? `<br />Due date: ${p.dueDate}` : ''}\n    </p>\n    <p>The invoice is now marked as <strong>partially paid</strong>. We will confirm again once the remaining balance is settled.</p>\n    <p>Best regards,<br />${brand}</p>\n  </div>`;\n\nconst text = [\n  greeting,\n  '',\n  `We confirm receipt of your payment of ${p.currency} ${p.amount.toFixed(2)}${p.method ? ` (via ${p.method})` : ''} for invoice ${p.invoiceId}. Thank you!`,\n  '',\n  `Invoice total: ${p.currency} ${p.invoiceTotal.toFixed(2)}`,\n  `Amount paid so far: ${p.currency} ${p.newAmountPaid.toFixed(2)}`,\n  `Remaining balance: ${p.currency} ${p.newBalance.toFixed(2)}`,\n  p.dueDate ? `Due date: ${p.dueDate}` : '',\n  '',\n  'The invoice is now marked as partially paid.',\n  '',\n  'Best regards,',\n  brand,\n].filter((line) => line !== '').join('\\n');\n\nreturn [{ json: { from, to: p.customerEmail, subject, html, text } }];"
+      },
+      "id": "f29f7d39-f065-2afa-559c-f3e90ab2c0ef",
+      "name": "Build Payment Receipt Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "029a06e6-da82-5772-9dc6-aafdc3abd74c",
+      "name": "Send Payment Receipt Email (Resend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Resend API (Authorization: Bearer re_...)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2,
+        "options": {}
+      },
+      "id": "1cf70df9-8adc-049c-7d61-a5f46152fa8b",
+      "name": "Merge Payment Emails",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1600,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Payments",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Payment ID": "={{ $('Compute Payment Impact').first().json.paymentId }}",
+            "Status": "processed",
+            "Invoice Status After": "={{ $('Compute Payment Impact').first().json.invoiceStatusAfter }}",
+            "Email ID": "={{ $json.id }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Payment ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "f961f466-3829-7bc5-b98b-6953b3ea1a3a",
+      "name": "Update Payment Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1840,
+        120
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "50bf20fb-0ad4-9a0f-38eb-033408bf9ce5",
+              "name": "success",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "13ac0ed1-cc11-4b5e-30e2-d8e87fbd1b45",
+              "name": "status",
+              "type": "string",
+              "value": "processed"
+            },
+            {
+              "id": "4b1bdc73-f66f-7bb8-02ac-4931da12e66c",
+              "name": "eventType",
+              "type": "string",
+              "value": "payment.received"
+            },
+            {
+              "id": "f27d44b7-b497-ac1c-7305-197b9efecb58",
+              "name": "paymentId",
+              "type": "string",
+              "value": "={{ $('Compute Payment Impact').first().json.paymentId }}"
+            },
+            {
+              "id": "7b4a1701-a4d6-9c67-03f0-530a6796c091",
+              "name": "invoiceId",
+              "type": "string",
+              "value": "={{ $('Compute Payment Impact').first().json.invoiceId }}"
+            },
+            {
+              "id": "4a677ef1-4204-d90f-845b-e594f7a3daf2",
+              "name": "amountApplied",
+              "type": "number",
+              "value": "={{ $('Compute Payment Impact').first().json.amount }}"
+            },
+            {
+              "id": "2f7b3a4a-56d7-db8a-9901-fd156183f3af",
+              "name": "currency",
+              "type": "string",
+              "value": "={{ $('Compute Payment Impact').first().json.currency }}"
+            },
+            {
+              "id": "6691295c-aeae-24b0-cc11-381ed1feb5d9",
+              "name": "invoiceStatusAfter",
+              "type": "string",
+              "value": "={{ $('Compute Payment Impact').first().json.invoiceStatusAfter }}"
+            },
+            {
+              "id": "f376c154-3eac-cee1-fde0-6e1e4b6524d7",
+              "name": "remainingBalance",
+              "type": "number",
+              "value": "={{ $('Compute Payment Impact').first().json.newBalance }}"
+            },
+            {
+              "id": "5f4ca84e-f9cb-7d17-51b2-42e28b0641fe",
+              "name": "emailId",
+              "type": "string",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "id": "a0a55c6d-a999-5fe9-a9a1-146d0e81da45",
+              "name": "processedAt",
+              "type": "string",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4c349736-bd2d-32fc-b98b-49063d627e66",
+      "name": "Build Payment Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2080,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "57cbc401-59bb-8e87-4971-9efe592883b7",
+      "name": "Respond: Payment Processed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2320,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Refunds",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Refund ID",
+              "lookupValue": "={{ $json.payload.refund.refundId }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "8421e4ec-d276-3d1c-9233-b84a2ced9880",
+      "name": "Lookup Refund (Duplicate Check)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -800,
+        680
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1577f1ac-1902-d0c1-0d21-f202adf2d330",
+              "leftValue": "={{ $json['Refund ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e51de346-35b3-c56a-a5fc-4f8a1c98eeb1",
+      "name": "Refund Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -560,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, status: 'duplicate', message: 'Refund already exists - skipped to prevent duplicate processing and duplicate notifications.', refundId: $json['Refund ID'], invoiceId: $json['Invoice ID'], existingStatus: $json['Status'] }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "e82d1939-86db-803c-3b6b-2ba817562467",
+      "name": "Respond: Duplicate Refund",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -320,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Refunds",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Refund ID": "={{ $('Validate Request').first().json.payload.refund.refundId }}",
+            "Invoice ID": "={{ $('Validate Request').first().json.payload.refund.invoiceId }}",
+            "Payment ID": "={{ $('Validate Request').first().json.payload.refund.paymentId || '' }}",
+            "Amount": "={{ $('Validate Request').first().json.payload.refund.amount }}",
+            "Currency": "={{ $('Validate Request').first().json.payload.refund.currency || 'USD' }}",
+            "Reason": "={{ $('Validate Request').first().json.payload.refund.reason || '' }}",
+            "Refunded At": "={{ $('Validate Request').first().json.payload.refund.refundedAt || $now.toISO() }}",
+            "Status": "processing",
+            "Invoice Status After": "",
+            "Email ID": "",
+            "Notes": "",
+            "Created At": "={{ $now.toISO() }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "b483ea64-330a-47df-bcc9-6d3ac9eac39c",
+      "name": "Store Refund Transaction",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -320,
+        680
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Invoice ID",
+              "lookupValue": "={{ $('Validate Request').first().json.payload.refund.invoiceId }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "9afc5209-3bc3-5374-9d9e-423daedf9344",
+      "name": "Get Invoice for Refund",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -80,
+        680
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e3635470-1b0f-c88c-712c-793f1aaeb936",
+              "leftValue": "={{ $json['Invoice ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "09f2b87f-f432-6150-0469-4a8ffab0c501",
+      "name": "Invoice Found (Refund)?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Refunds",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Refund ID": "={{ $('Validate Request').first().json.payload.refund.refundId }}",
+            "Status": "error",
+            "Notes": "invoice_not_found",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Refund ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "dbaaf5f0-4d7c-197e-50fe-5b2038243002",
+      "name": "Mark Refund Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        880
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, status: 'invoice_not_found', message: 'The referenced invoice does not exist in the ledger. The refund row was stored with status=error for reconciliation.', invoiceId: $('Validate Request').first().json.payload.refund.invoiceId, refundId: $('Validate Request').first().json.payload.refund.refundId }) }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "c158b75d-3ba3-e131-32f3-92229b3eb76b",
+      "name": "Respond: Refund Invoice Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        640,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Compute Refund Impact\n// Applies the refund to the invoice financials (idempotency is already\n// guaranteed by the duplicate check upstream).\n//  - a refund cannot return more than what was actually paid (excess is reported)\n//  - updates the invoice financial status to refunded / partially refunded\n// ─────────────────────────────────────────────────────────────────\nconst row = $input.first().json; // invoice row read from the Invoices tab\nconst refund = $('Validate Request').first().json.payload.refund;\n\nconst num = (v) => {\n  const n = Number(String(v ?? '').replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : 0;\n};\nconst money = (v) => Number(v.toFixed(2));\n\nconst invoiceId = String(row['Invoice ID'] || refund.invoiceId);\nconst currency = String(row['Currency'] || refund.currency || 'USD').toUpperCase();\n\nconst total = num(row['Total Amount']);\nconst paidBefore = num(row['Amount Paid']);\nconst amount = num(refund.amount);\n\n// Refunds are capped at the amount actually paid on this invoice\nconst refundApplied = Math.min(amount, paidBefore);\nconst excessRefunded = Math.max(0, amount - paidBefore);\n\nconst newAmountPaid = money(Math.max(0, paidBefore - refundApplied));\nconst newBalance = money(Math.max(0, total - newAmountPaid));\n\nconst invoiceStatusAfter = newAmountPaid <= 0.005\n  ? 'refunded'\n  : 'partially_refunded';\n\nreturn [{\n  json: {\n    invoiceId,\n    refundId: String(refund.refundId),\n    paymentId: String(refund.paymentId || ''),\n    customerName: String(row['Customer Name'] || ''),\n    customerEmail: String(row['Customer Email'] || ''),\n    currency,\n    invoiceTotal: money(total),\n    refundAmount: money(amount),\n    refundApplied: money(refundApplied),\n    excessRefunded: money(excessRefunded),\n    paidBefore: money(paidBefore),\n    newAmountPaid,\n    newBalance,\n    invoiceStatusBefore: String(row['Status'] || ''),\n    invoiceStatusAfter,\n    reason: String(refund.reason || ''),\n    refundedAt: refund.refundedAt || new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "6201c9d1-af8a-dc2f-91e8-96e10e0a8df8",
+      "name": "Compute Refund Impact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice ID": "={{ $json.invoiceId }}",
+            "Amount Paid": "={{ $json.newAmountPaid }}",
+            "Balance": "={{ $json.newBalance }}",
+            "Status": "={{ $json.invoiceStatusAfter }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Invoice ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "ba9d5e64-6982-c2d6-7fa9-c012561c697b",
+      "name": "Update Invoice Financial Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        640,
+        680
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// Build Refund Confirmation Email → exact Resend API payload\n// ─────────────────────────────────────────────────────────────────\nconst r = $('Compute Refund Impact').first().json;\n\nconst brand = $env.INVOICE_BRAND_NAME || 'Your Company';\nconst from = $env.RESEND_FROM_EMAIL || 'Invoicing <onboarding@resend.dev>';\nconst greeting = r.customerName ? `Hi ${r.customerName},` : 'Hello,';\nconst subject = `Refund confirmation for invoice ${r.invoiceId} — ${r.currency} ${r.refundApplied.toFixed(2)}`;\n\nconst statusLine = r.invoiceStatusAfter === 'refunded'\n  ? 'The invoice has been fully refunded and is now closed.'\n  : `The invoice now has a remaining balance of ${r.currency} ${r.newBalance.toFixed(2)}.`;\n\nconst excessNote = r.excessRefunded > 0\n  ? `<p style=\"color:#b45309;\">Note: the refund amount exceeded what was paid on this invoice by <strong>${r.currency} ${r.excessRefunded.toFixed(2)}</strong>. Our team will contact you about the excess.</p>`\n  : '';\n\nconst html = `\n  <div style=\"font-family:Helvetica,Arial,sans-serif;color:#0f172a;max-width:560px;\">\n    <p>${greeting}</p>\n    <p>We confirm that a refund of <strong>${r.currency} ${r.refundApplied.toFixed(2)}</strong> has been processed for invoice <strong>${r.invoiceId}</strong>${r.reason ? ` (${r.reason})` : ''}.</p>\n    <p style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;\">\n      Invoice total: ${r.currency} ${r.invoiceTotal.toFixed(2)}<br />\n      Refunded: <strong>${r.currency} ${r.refundApplied.toFixed(2)}</strong><br />\n      Amount paid after refund: ${r.currency} ${r.newAmountPaid.toFixed(2)}<br />\n      Invoice status: <strong>${r.invoiceStatusAfter.replace('_', ' ')}</strong>\n    </p>\n    ${excessNote}\n    <p>${statusLine}</p>\n    <p>Depending on your payment method, please allow 5–10 business days for the funds to appear.</p>\n    <p>Best regards,<br />${brand}</p>\n  </div>`;\n\nconst text = [\n  greeting,\n  '',\n  `We confirm that a refund of ${r.currency} ${r.refundApplied.toFixed(2)} has been processed for invoice ${r.invoiceId}${r.reason ? ` (${r.reason})` : ''}.`,\n  '',\n  `Invoice total: ${r.currency} ${r.invoiceTotal.toFixed(2)}`,\n  `Refunded: ${r.currency} ${r.refundApplied.toFixed(2)}`,\n  `Amount paid after refund: ${r.currency} ${r.newAmountPaid.toFixed(2)}`,\n  `Invoice status: ${r.invoiceStatusAfter.replace('_', ' ')}`,\n  '',\n  statusLine,\n  'Depending on your payment method, please allow 5–10 business days for the funds to appear.',\n  '',\n  'Best regards,',\n  brand,\n].filter((line) => line !== '').join('\\n');\n\nreturn [{ json: { from, to: r.customerEmail, subject, html, text } }];"
+      },
+      "id": "ad72ffb3-a1de-828a-3739-fbb287f95d77",
+      "name": "Build Refund Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "b9c48170-0890-59eb-fde6-8777787c9190",
+      "name": "Send Refund Email (Resend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Resend API (Authorization: Bearer re_...)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SPREADSHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Refunds",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Refund ID": "={{ $('Compute Refund Impact').first().json.refundId }}",
+            "Status": "processed",
+            "Invoice Status After": "={{ $('Compute Refund Impact').first().json.invoiceStatusAfter }}",
+            "Email ID": "={{ $json.id }}",
+            "Updated At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "Refund ID"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "f07b05ee-e338-1333-a126-61e024afeb25",
+      "name": "Update Refund Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1360,
+        680
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account (Invoice Ledger)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "416139b2-2ee2-2c36-6a83-bfc5584de9d0",
+              "name": "success",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "91600d82-8110-7508-ac43-df104bcdc8fb",
+              "name": "status",
+              "type": "string",
+              "value": "processed"
+            },
+            {
+              "id": "4d2056bf-6b86-341a-8a2e-4fd77168a52e",
+              "name": "eventType",
+              "type": "string",
+              "value": "refund.created"
+            },
+            {
+              "id": "20b39c2e-d579-63bf-fcf9-4257d205eb8a",
+              "name": "refundId",
+              "type": "string",
+              "value": "={{ $('Compute Refund Impact').first().json.refundId }}"
+            },
+            {
+              "id": "f3295681-3ad1-e6ab-d06c-3317a78e87c6",
+              "name": "invoiceId",
+              "type": "string",
+              "value": "={{ $('Compute Refund Impact').first().json.invoiceId }}"
+            },
+            {
+              "id": "042b51f2-b74b-cfbd-908c-794471a4a954",
+              "name": "refundApplied",
+              "type": "number",
+              "value": "={{ $('Compute Refund Impact').first().json.refundApplied }}"
+            },
+            {
+              "id": "a8329367-6b1a-bec3-18eb-3386bf032471",
+              "name": "currency",
+              "type": "string",
+              "value": "={{ $('Compute Refund Impact').first().json.currency }}"
+            },
+            {
+              "id": "217f60f1-ea83-7819-288c-e6991930084f",
+              "name": "invoiceStatusAfter",
+              "type": "string",
+              "value": "={{ $('Compute Refund Impact').first().json.invoiceStatusAfter }}"
+            },
+            {
+              "id": "548f80ef-4880-a966-4f83-eb1b94e38c40",
+              "name": "emailId",
+              "type": "string",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "id": "54e8dd9b-af05-0e69-1f4b-7702c8803e0c",
+              "name": "processedAt",
+              "type": "string",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "14db5c42-8720-5071-f3c1-2222c6c39bf3",
+      "name": "Build Refund Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1600,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "8f6d3902-5002-2ef4-21d5-e7034ea06452",
+      "name": "Respond: Refund Processed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1840,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🧾 Invoice & Payment Management\nOne webhook → three idempotent processing paths: **invoice**, **payment** and **refund** — Google Sheets as the ledger, PDFbro as the PDF engine, Google Drive as storage, Resend for transactional email.\n\n### Setup checklist\n1. Set env var `INVOICE_WEBHOOK_API_KEY` — **required**. Until it is set, every request is rejected (default deny)\n2. Optional env vars: `INVOICE_BRAND_NAME`, `SUPPORT_EMAIL`, `RESEND_FROM_EMAIL`\n3. Create the Google Sheet (tabs **Invoices / Payments / Refunds**, columns in the repo README) and paste the **spreadsheet ID** into every Google Sheets node\n4. Assign credentials: Google Sheets, Google Drive, PDFbro (Header Auth), Resend (Header Auth)\n5. Paste the Drive **folder ID** into “Upload PDF to Google Drive”\n6. Activate the workflow → `POST` to `/webhook/invoice-payment-management`\n\nFull docs: `n8n/README.md`",
+        "height": 520,
+        "width": 800,
+        "color": 5
+      },
+      "id": "4f74d632-c452-a377-3b9f-d6a054ada392",
+      "name": "Note – Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1980,
+        -1060
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 1 · Event Validation & Routing\n- **Webhook** receives every event (`POST /invoice-payment-management`)\n- **Validate Request** checks the `x-api-key` header against `INVOICE_WEBHOOK_API_KEY` and validates the payload shape — **default deny**\n- **API Key Valid?** → `false`: **401 Unauthorized**, nothing is processed\n- **Route by Event Type** → one lane per event (`invoice.created` / `payment.received` / `refund.created`), anything else → **400 Bad Request**\n\nEvery lane ends with **Respond to Webhook**, so the calling application receives a structured result (status, IDs, timestamps).",
+        "height": 620,
+        "width": 1080,
+        "color": 7
+      },
+      "id": "7ea40f57-4ba8-c145-c864-faf19248863e",
+      "name": "Note – Validation & Routing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1980,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2 · Invoice Processing — `invoice.created`\n1. **Lookup Invoice** — duplicate check by Invoice ID. An existing invoice is never processed or emailed twice (`duplicate` response)\n2. **Build Invoice Record** — normalize payload, compute totals, render the HTML for the PDF and the email\n3. **Create Invoice Record** — row stored with status `processing` (paper trail before any external call)\n4. In parallel: **Generate Invoice PDF (PDFbro)** → **Upload to Drive** → **Shape PDF Result**  ∥  **Build Invoice Email** → **Send Invoice Email (Resend)** → **Shape Email Result**\n5. **Merge Processing Results** — combines the Drive result and the email result\n6. **Update Invoice Record** — status `processed` + PDF URL + email timestamp\n7. **Respond** — structured result back to the application",
+        "height": 600,
+        "width": 2640,
+        "color": 4
+      },
+      "id": "bf98fd2c-3ed6-c016-f10e-7a3eebbbd8be",
+      "name": "Note – Invoice Path",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        -760
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3 · Payment Processing — `payment.received`\n1. **Lookup Payment** — duplicate check by Payment ID → `duplicate` response if already processed\n2. **Store Payment Transaction** — row stored with status `processing`\n3. **Get Invoice for Payment** — invoice missing? → payment marked `error` + **404** response\n4. **Compute Payment Impact** — new Amount Paid / Balance; caps overpayment; decides `partially_paid` vs `paid`\n5. **Update Invoice Balance**\n6. **Invoice Fully Paid?** → `true`: final payment confirmation · `false`: payment receipt (remaining balance)\n7. **Merge Payment Emails** → **Update Payment Status** (`processed` + email ID) → **Respond**",
+        "height": 580,
+        "width": 3360,
+        "color": 3
+      },
+      "id": "a5dd4bb6-f780-8ad7-a16d-8ebedc0a6418",
+      "name": "Note – Payment Path",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4 · Refund Processing — `refund.created`\n1. **Lookup Refund** — duplicate check by Refund ID → `duplicate` response if already processed\n2. **Store Refund Transaction** (status `processing`)\n3. **Get Invoice for Refund** — invoice missing? → refund marked `error` + **404** response\n4. **Compute Refund Impact** — refund capped at the amount actually paid; invoice becomes `refunded` or `partially_refunded`\n5. **Update Invoice Financial Status** → **Send Refund Email (Resend)** → **Update Refund Status** (`processed` + email ID) → **Respond**",
+        "height": 440,
+        "width": 2880,
+        "color": 2
+      },
+      "id": "19a71d68-755a-df59-e6c4-4634676d439e",
+      "name": "Note – Refund Path",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 📄 PDFbro node\nSends `invoiceHtml` to PDFbro and expects the PDF back as binary data (`data`).\nIf your PDFbro account uses a different endpoint, body or auth header, adjust **this node only** — the Drive upload, email and status update read the binary output and keep working unchanged. Any HTML→PDF API that returns a file can be swapped in here.",
+        "height": 200,
+        "width": 560,
+        "color": 1
+      },
+      "id": "d47d3c23-b07b-1ea5-0f78-2e0a8d123913",
+      "name": "Note – PDFbro",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        140,
+        -880
+      ]
+    }
+  ],
+  "connections": {
+    "Invoice & Payment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "API Key Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Key Valid?": {
+      "main": [
+        [
+          {
+            "node": "Route by Event Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Event Type": {
+      "main": [
+        [
+          {
+            "node": "Lookup Invoice (Duplicate Check)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Payment (Duplicate Check)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Refund (Duplicate Check)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Invoice (Duplicate Check)": {
+      "main": [
+        [
+          {
+            "node": "Invoice Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Exists?": {
+      "main": [
+        [
+          {
+            "node": "Respond: Duplicate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Invoice Record": {
+      "main": [
+        [
+          {
+            "node": "Create Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Invoice Record": {
+      "main": [
+        [
+          {
+            "node": "Generate Invoice PDF (PDFbro)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Invoice Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Invoice PDF (PDFbro)": {
+      "main": [
+        [
+          {
+            "node": "Upload PDF to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Shape PDF Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape PDF Result": {
+      "main": [
+        [
+          {
+            "node": "Merge Processing Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Invoice Email": {
+      "main": [
+        [
+          {
+            "node": "Send Invoice Email (Resend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Invoice Email (Resend)": {
+      "main": [
+        [
+          {
+            "node": "Shape Email Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Email Result": {
+      "main": [
+        [
+          {
+            "node": "Merge Processing Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Processing Results": {
+      "main": [
+        [
+          {
+            "node": "Update Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Invoice Record": {
+      "main": [
+        [
+          {
+            "node": "Build Invoice Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Invoice Response": {
+      "main": [
+        [
+          {
+            "node": "Respond: Invoice Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Payment (Duplicate Check)": {
+      "main": [
+        [
+          {
+            "node": "Payment Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Exists?": {
+      "main": [
+        [
+          {
+            "node": "Respond: Duplicate Payment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Payment Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Payment Transaction": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice for Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice for Payment": {
+      "main": [
+        [
+          {
+            "node": "Invoice Found (Payment)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Found (Payment)?": {
+      "main": [
+        [
+          {
+            "node": "Compute Payment Impact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Payment Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Payment Failed": {
+      "main": [
+        [
+          {
+            "node": "Respond: Payment Invoice Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Payment Impact": {
+      "main": [
+        [
+          {
+            "node": "Update Invoice Balance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Invoice Balance": {
+      "main": [
+        [
+          {
+            "node": "Invoice Fully Paid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Fully Paid?": {
+      "main": [
+        [
+          {
+            "node": "Build Final Payment Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Payment Receipt Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Final Payment Email": {
+      "main": [
+        [
+          {
+            "node": "Send Final Payment Email (Resend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Final Payment Email (Resend)": {
+      "main": [
+        [
+          {
+            "node": "Merge Payment Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Payment Receipt Email": {
+      "main": [
+        [
+          {
+            "node": "Send Payment Receipt Email (Resend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Payment Receipt Email (Resend)": {
+      "main": [
+        [
+          {
+            "node": "Merge Payment Emails",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Payment Emails": {
+      "main": [
+        [
+          {
+            "node": "Update Payment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Payment Status": {
+      "main": [
+        [
+          {
+            "node": "Build Payment Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Payment Response": {
+      "main": [
+        [
+          {
+            "node": "Respond: Payment Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Refund (Duplicate Check)": {
+      "main": [
+        [
+          {
+            "node": "Refund Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refund Exists?": {
+      "main": [
+        [
+          {
+            "node": "Respond: Duplicate Refund",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Refund Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Refund Transaction": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice for Refund",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice for Refund": {
+      "main": [
+        [
+          {
+            "node": "Invoice Found (Refund)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Found (Refund)?": {
+      "main": [
+        [
+          {
+            "node": "Compute Refund Impact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Refund Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Refund Failed": {
+      "main": [
+        [
+          {
+            "node": "Respond: Refund Invoice Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Refund Impact": {
+      "main": [
+        [
+          {
+            "node": "Update Invoice Financial Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Invoice Financial Status": {
+      "main": [
+        [
+          {
+            "node": "Build Refund Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Refund Email": {
+      "main": [
+        [
+          {
+            "node": "Send Refund Email (Resend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Refund Email (Resend)": {
+      "main": [
+        [
+          {
+            "node": "Update Refund Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Refund Status": {
+      "main": [
+        [
+          {
+            "node": "Build Refund Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Refund Response": {
+      "main": [
+        [
+          {
+            "node": "Respond: Refund Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
