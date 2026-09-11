@@ -266,3 +266,213 @@ export interface WebhookConfig {
   maxLatencySeconds: number;
   maxSlippagePercent: number;
 }
+
+// ============================================================================
+// JARVIS Committee (Multi-Agent Deliberative Engine)
+// ============================================================================
+export type JarvisDataSource = 'live' | 'synthetic' | 'mixed';
+export type JarvisSide = 'LONG' | 'SHORT' | 'NEUTRAL';
+export type JarvisVerdict = 'BUY' | 'SELL' | 'HOLD';
+export type JarvisRegime =
+  | 'Bull Trend'
+  | 'Bear Trend'
+  | 'High Volatility'
+  | 'Mean Reverting'
+  | 'Low Volatility';
+
+export interface JarvisIndicatorSnapshot {
+  rsi14: number;
+  macdLine: number;
+  macdSignal: number;
+  macdHist: number;
+  sma10: number;
+  sma30: number;
+  ema12: number;
+  ema26: number;
+  atr14: number;
+  realizedVolatility: number;
+  slopeBpsPerBar: number;
+  changePct: number;
+  rangePosition: number;
+  volumeRatio: number;
+}
+
+export interface JarvisAgentSnapshot {
+  agentId: string;
+  name: string;
+  role: string;
+  baseWeight: number;
+  effectiveWeight: number;
+  score: number;
+  confidence: number;
+  side: JarvisSide;
+  reason: string;
+  evidence: Record<string, number | string>;
+}
+
+export interface JarvisConsensus {
+  score: number;
+  confidence: number;
+  side: JarvisSide;
+  verdict: JarvisVerdict;
+  bullPressure: number;
+  bearPressure: number;
+  agreement: number;
+  dispute: boolean;
+  effectiveWeights: Record<string, number>;
+  reasons: string[];
+}
+
+export interface JarvisDebate {
+  bullPressure: number;
+  bearPressure: number;
+  dispute: boolean;
+  reason: string;
+}
+
+export interface JarvisPosition {
+  id: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  quantity: number;
+  notional: number;
+  tpPrice: number;
+  slPrice: number;
+  status: 'OPEN' | 'CLOSED';
+  entryTime: string;
+  closeTime?: string;
+  closeReason?: 'TP' | 'SL' | 'HALT' | 'MANUAL';
+  pnl: number;
+  riskAmount: number;
+  scoreAtEntry: number;
+  confidenceAtEntry: number;
+}
+
+export interface JarvisStagedOperation {
+  id: string;
+  commitHash: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  quantity: number;
+  notional: number;
+  tpPrice: number;
+  slPrice: number;
+  riskAmount: number;
+  scoreAtEntry: number;
+  confidenceAtEntry: number;
+  status: 'STAGED' | 'APPROVED' | 'REJECTED';
+  reason: string;
+  createdAt: string;
+}
+
+export interface JarvisRiskSnapshot {
+  initialBalance: number;
+  currentBalance: number;
+  availableCash: number;
+  consecutiveLosses: number;
+  maxConsecutiveLosses: number;
+  lockActive: boolean;
+  lockReason?: string;
+  scalperMode: boolean;
+  riskPercent: number;
+  riskPerTrade: number;
+  maxAllocationPerAsset: number;
+  cashFloor: number;
+  dailyDrawdownLimitPct: number;
+  dailyDrawdownPercent: number;
+  peakBalanceToday: number;
+  openPositions: JarvisPosition[];
+  closedToday: JarvisPosition[];
+  deskMode: boolean;
+  stagedOperations: JarvisStagedOperation[];
+}
+
+export interface JarvisRagSnapshot {
+  grounded: boolean;
+  hallucinationScore: number;
+  verdictGrounded: boolean;
+  checks: { name: string; passed: boolean; detail: string }[];
+  citations: string[];
+  reason: string;
+}
+
+export interface JarvisComplianceSnapshot {
+  timeframe: string;
+  exchange: string;
+  auditedTimeframe: boolean;
+  acceptedTimeframes: string[];
+  lastVetoReason?: string;
+}
+
+export interface JarvisAuditEvent {
+  id: string;
+  blockNumber: number;
+  type:
+    | 'ORDER_FILLED'
+    | 'POSITION_CLOSED'
+    | 'RISK_VETO'
+    | 'RAG_VETO'
+    | 'HALT'
+    | 'CONFIG'
+    | 'STAGED'
+    | 'APPROVED'
+    | 'REJECTED';
+  timestamp: string;
+  symbol?: string;
+  direction?: string;
+  score?: number;
+  confidence?: number;
+  detail: string;
+  prevHash: string;
+  hash: string;
+}
+
+export interface JarvisAuditSnapshot {
+  integrity: boolean;
+  totalBlocks: number;
+  tail: JarvisAuditEvent[];
+}
+
+export interface JarvisSnapshot {
+  timestamp: string;
+  symbol: string;
+  price: number;
+  dataSource: JarvisDataSource;
+  isRunning: boolean;
+  regime: JarvisRegime;
+  regimeConfidence: number;
+  candlesCount: number;
+  indicators: JarvisIndicatorSnapshot;
+  agents: JarvisAgentSnapshot[];
+  consensus: JarvisConsensus;
+  debate: JarvisDebate;
+  risk: JarvisRiskSnapshot;
+  validation: JarvisRagSnapshot;
+  compliance: JarvisComplianceSnapshot;
+  audit: JarvisAuditSnapshot;
+  autoTradeEnabled: boolean;
+  deskMode: boolean;
+}
+
+export interface JarvisBacktestResult {
+  symbol: string;
+  bars: number;
+  days: number;
+  dataSource: 'synthetic';
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  initialBalance: number;
+  finalBalance: number;
+  totalPnl: number;
+  totalPnlPct: number;
+  maxDrawdownPct: number;
+  sharpeRatio: number;
+  buySignals: number;
+  sellSignals: number;
+  holdSignals: number;
+  equityCurve: { index: number; time: string; balance: number }[];
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { Account, Bot, Trade, Ticker, SystemLog } from './types';
 import {
   fetchAccounts,
@@ -8,6 +9,7 @@ import {
   fetchLogs,
 } from './services/api';
 import { Navbar } from './components/Navbar';
+import { NeonBackground } from './components/NeonBackground';
 import { TickerBar } from './components/TickerBar';
 import { DashboardView } from './components/DashboardView';
 import { AccountsView } from './components/AccountsView';
@@ -15,6 +17,7 @@ import { BotsView } from './components/BotsView';
 import { WebhookView } from './components/WebhookView';
 import { AuditValidationView } from './components/AuditValidationView';
 import { EntanglementView } from './components/EntanglementView';
+import { JarvisCommitteeView } from './components/JarvisCommitteeView';
 
 import { BacktestingView } from './components/BacktestingView';
 import { TradeHistoryView } from './components/TradeHistoryView';
@@ -109,7 +112,10 @@ export default function App() {
     };
 
   return (
-    <div className="min-h-screen bg-[#050507] text-[#e0e0e0] font-sans selection:bg-cyan-500 selection:text-slate-950 flex flex-col">
+    <div className="min-h-screen bg-[#050507] text-[#e0e0e0] font-sans selection:bg-cyan-500 selection:text-slate-950 flex flex-col relative">
+      {/* Fundo 3D neon */}
+      <NeonBackground />
+
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
@@ -118,6 +124,7 @@ export default function App() {
         selectedAccountId={selectedAccountId}
         setSelectedAccountId={setSelectedAccountId}
         bots={bots}
+        trades={trades}
         onOpenNewAccountModal={() => setActiveTab('accounts')}
         onRefreshData={loadData}
       />
@@ -130,7 +137,13 @@ export default function App() {
       />
 
       {/* Main View Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <motion.main
+        key={activeTab}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10"
+      >
         {activeTab === 'dashboard' && (
           <DashboardView
             account={selectedAccount}
@@ -167,13 +180,15 @@ export default function App() {
 
         {activeTab === 'entanglement' && <EntanglementView />}
 
+        {activeTab === 'jarvis' && <JarvisCommitteeView />}
+
 
         {activeTab === 'backtest' && <BacktestingView />}
 
         {activeTab === 'history' && (
           <TradeHistoryView trades={trades} logs={logs} />
         )}
-      </main>
+      </motion.main>
     </div>
   );
 }

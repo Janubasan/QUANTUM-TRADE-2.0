@@ -8,6 +8,29 @@
   }
 }
 
+/* ---- Neon utilities ---- */
+.neon-text {
+  text-shadow:
+    0 0 6px rgba(34, 211, 238, 0.55),
+    0 0 18px rgba(34, 211, 238, 0.35);
+}
+.neon-border {
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.25),
+    0 0 18px rgba(34, 211, 238, 0.18);
+}
+.neon-card {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 10px 40px -12px rgba(34, 211, 238, 0.25);
+}
+.neon-glow-cyan {
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+}
+.neon-glow-violet {
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+}
+
 /* Custom sleek scrollbar for Bento panels and horizontal navigation */
 ::-webkit-scrollbar {
   width: 6px;

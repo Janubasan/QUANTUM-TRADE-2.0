@@ -10,6 +10,8 @@ import {
   WebhookAuditLog,
   WebhookConfig,
   SessionStats,
+  JarvisSnapshot,
+  JarvisBacktestResult,
 } from '../types.js';
 
 async function requestJson<T>(url: string, options?: RequestInit, retries = 3): Promise<T> {
@@ -169,6 +171,71 @@ export async function deleteBot(id: string): Promise<void> {
 
 export async function fetchEntanglementData(): Promise<EntanglementData> {
   return requestJson<EntanglementData>('/api/collective/entanglement');
+}
+
+// ============================================================================
+// JARVIS Committee API
+// ============================================================================
+export async function fetchJarvisCommittee(): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee');
+}
+
+export async function evaluateJarvisCommittee(): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee/evaluate', { method: 'POST' });
+}
+
+export async function toggleJarvisCommittee(): Promise<{ isRunning: boolean; snapshot: JarvisSnapshot }> {
+  return requestJson<{ isRunning: boolean; snapshot: JarvisSnapshot }>('/api/jarvis/committee/toggle', {
+    method: 'POST',
+  });
+}
+
+export async function configureJarvisCommittee(data: {
+  symbol?: string;
+  autoTrade?: boolean;
+  scalperMode?: boolean;
+}): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function releaseJarvisRiskLock(): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee/risk/release', { method: 'POST' });
+}
+
+export async function setJarvisDeskMode(enabled: boolean): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee/desk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function approveJarvisOperation(id: string): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee/ops/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+}
+
+export async function rejectJarvisOperation(id: string): Promise<JarvisSnapshot> {
+  return requestJson<JarvisSnapshot>('/api/jarvis/committee/ops/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+}
+
+export async function runJarvisBacktest(days: number): Promise<JarvisBacktestResult> {
+  return requestJson<JarvisBacktestResult>('/api/jarvis/committee/backtest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ days }),
+  });
 }
 
 export async function runBacktest(req: BacktestRequest): Promise<BacktestResult> {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Account, Bot } from '../types';
+import { Account, Bot, Trade } from '../types';
 import {
   LayoutDashboard,
   Wallet,
@@ -15,6 +15,7 @@ import {
   Cpu,
   Radio,
   Terminal,
+  Landmark,
   ExternalLink,
   AlertCircle,
   CheckCircle2,
@@ -29,6 +30,7 @@ interface NavbarProps {
   selectedAccountId: string;
   setSelectedAccountId: (id: string) => void;
   bots: Bot[];
+  trades: Trade[];
   onOpenNewAccountModal: () => void;
   onRefreshData?: () => void;
 }
@@ -40,6 +42,7 @@ export function Navbar({
   selectedAccountId,
   setSelectedAccountId,
   bots,
+  trades,
   onOpenNewAccountModal,
   onRefreshData,
 }: NavbarProps) {
@@ -55,6 +58,13 @@ export function Navbar({
   const totalBalance = accounts.reduce((acc, curr) => acc + (curr.currentBalance || 0), 0);
   const totalProfit = accounts.reduce((acc, curr) => acc + ((curr.currentBalance || 0) - (curr.initialBalance || 0)), 0);
   const activeBotsCount = bots.filter((b) => b.status === 'running').length;
+
+  // Analytics globais (cabeçalho)
+  const totalTradesAll = accounts.reduce((acc, a) => acc + (a.totalTrades || 0), 0);
+  const totalWinsAll = accounts.reduce((acc, a) => acc + (a.winningTrades || 0), 0);
+  const winRate = totalTradesAll > 0 ? Math.round((totalWinsAll / totalTradesAll) * 100) : 0;
+  const openPositionsCount = trades.filter((t) => t.status === 'open').length;
+  const closedTradesCount = trades.filter((t) => t.status === 'closed').length;
 
   const handleConnectFallback = async () => {
     setMmConnecting(true);
@@ -140,6 +150,7 @@ export function Navbar({
     { id: 'validation', label: 'Validação RAG & Hashes', icon: ShieldCheck },
     { id: 'webhook', label: 'Webhook & Sinais', icon: Webhook },
     { id: 'entanglement', label: 'Entanglement & Sinais', icon: BrainCircuit },
+    { id: 'jarvis', label: 'Comitê JARVIS', icon: Landmark },
     { id: 'backtest', label: 'Backtest Coletivo', icon: LineChart },
     { id: 'history', label: 'Histórico & Logs', icon: History },
   ];
@@ -200,7 +211,7 @@ export function Navbar({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tighter text-white">
+              <h1 className="text-xl font-bold tracking-tighter text-white neon-text">
                 JANUTRADE
               </h1>
               <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
@@ -300,6 +311,34 @@ export function Navbar({
             <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#22c55e] animate-pulse" />
             <span>{activeBotsCount} Bots Ativos</span>
           </div>
+        </div>
+
+        {/* Analytics + carteiras (cabeçalho neon) */}
+        <div className="w-full flex flex-wrap items-center gap-2 pt-1">
+          <span className="px-2.5 py-1 rounded-full bg-zinc-900/60 border border-white/10 text-[10px] font-mono text-white/70">
+            Win Rate <span className="text-emerald-400 font-bold">{winRate}%</span>
+          </span>
+          <span className="px-2.5 py-1 rounded-full bg-zinc-900/60 border border-white/10 text-[10px] font-mono text-white/70">
+            Trades <span className="text-cyan-300 font-bold">{totalTradesAll}</span>
+            <span className="text-white/30"> · fechados {closedTradesCount}</span>
+          </span>
+          <span className="px-2.5 py-1 rounded-full bg-zinc-900/60 border border-white/10 text-[10px] font-mono text-white/70">
+            Posições <span className={openPositionsCount > 0 ? 'text-amber-300 font-bold' : 'text-white font-bold'}>{openPositionsCount}</span>
+          </span>
+
+          {/* Saldos por carteira */}
+          {accounts.map((acc) => (
+            <span
+              key={acc.id}
+              className="px-2.5 py-1 rounded-full bg-zinc-900/60 border border-white/10 text-[10px] font-mono text-white/60 flex items-center gap-1.5"
+              title={`${acc.name} (${acc.broker})`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${acc.type === 'real' ? 'bg-orange-400' : 'bg-cyan-400'}`} />
+              {acc.broker === 'metamask' ? '🦊' : acc.broker === 'blockchain_evm' ? '⛓️' : '👛'}
+              <span className="truncate max-w-[90px]">{acc.name.split('(')[0].trim()}</span>
+              <span className="text-white font-bold">${(acc.currentBalance ?? 0).toFixed(2)}</span>
+            </span>
+          ))}
         </div>
       </div>
 

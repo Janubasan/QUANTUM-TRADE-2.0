@@ -30,6 +30,7 @@ import { CHAIN_DEFINITIONS, CHAIN_KEYS, isChainKey } from './server/services/onc
 import { TOKEN_REGISTRY, resolveToken, hasToken } from './server/services/onchain/tokenRegistry.js';
 import type { ChainKey } from './server/services/onchain/chainRegistry.js';
 import { marketClockService } from './server/services/marketClockService.js';
+import { jarvisCommitteeService } from './server/engine/committee/jarvisCommittee.js';
 import { executionScheduler } from './server/services/executionScheduler.js';
 import { encryptSecret } from './server/services/cryptoService.js';
 import { Account, Bot, Trade } from './src/types.js';
@@ -267,6 +268,7 @@ async function startServer() {
   // Start background bot worker engine & multi-source price aggregator
   botWorker.start();
   priceAggregatorService.start();
+  jarvisCommitteeService.start();
 
   // Hydrate persistent state from Firestore Cloud Vault (anti-reset safeguard)
   store.hydrateFromCloudVault().catch((err) => {
@@ -955,6 +957,66 @@ async function startServer() {
   app.post('/api/collective/backtest', (req, res) => {
     const result = collectiveService.runBacktest(req.body);
     res.json(result);
+  });
+
+  // --- JARVIS COMMITTEE (Multi-Agent Deliberative Engine) ---
+  app.get('/api/jarvis/committee', (_req, res) => {
+    res.json(jarvisCommitteeService.getSnapshot());
+  });
+
+  app.post('/api/jarvis/committee/evaluate', (_req, res) => {
+    res.json(jarvisCommitteeService.evaluateNow());
+  });
+
+  app.post('/api/jarvis/committee/toggle', (_req, res) => {
+    const isRunning = jarvisCommitteeService.toggle();
+    res.json({ isRunning, snapshot: jarvisCommitteeService.getSnapshot() });
+  });
+
+  app.post('/api/jarvis/committee/config', (req, res) => {
+    const { symbol, autoTrade, scalperMode } = req.body || {};
+    if (typeof symbol === 'string' && symbol) jarvisCommitteeService.setSymbol(symbol);
+    if (typeof autoTrade === 'boolean') jarvisCommitteeService.setAutoTrade(autoTrade);
+    if (typeof scalperMode === 'boolean') jarvisCommitteeService.setScalperMode(scalperMode);
+    res.json(jarvisCommitteeService.getSnapshot());
+  });
+
+  app.post('/api/jarvis/committee/risk/release', (_req, res) => {
+    jarvisCommitteeService.releaseRiskLock();
+    res.json(jarvisCommitteeService.getSnapshot());
+  });
+
+  // Mesa OpenAlice (Trading-as-Git): operações staged + aprovação/rejeição
+  app.post('/api/jarvis/committee/desk', (req, res) => {
+    const { enabled } = req.body || {};
+    if (typeof enabled === 'boolean') jarvisCommitteeService.setDeskMode(enabled);
+    res.json(jarvisCommitteeService.getSnapshot());
+  });
+
+  app.post('/api/jarvis/committee/ops/approve', (req, res) => {
+    const { id } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'id da operação é obrigatório' });
+    res.json(jarvisCommitteeService.approveOperation(String(id)));
+  });
+
+  app.post('/api/jarvis/committee/ops/reject', (req, res) => {
+    const { id } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'id da operação é obrigatório' });
+    res.json(jarvisCommitteeService.rejectOperation(String(id)));
+  });
+
+  app.post('/api/jarvis/committee/backtest', (req, res) => {
+    const days = Number(req.body?.days) || 14;
+    res.json(jarvisCommitteeService.runBacktest(days));
+  });
+
+  app.get('/api/jarvis/audit/chain', (_req, res) => {
+    res.json({
+      integrity: true,
+      totalBlocks: jarvisCommitteeService.getSnapshot().audit.totalBlocks,
+      tail: jarvisCommitteeService.getSnapshot().audit.tail,
+      snapshot: jarvisCommitteeService.getSnapshot(),
+    });
   });
 
   // System Logs
