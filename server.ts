@@ -32,6 +32,7 @@ import type { ChainKey } from './server/services/onchain/chainRegistry.js';
 import { marketClockService } from './server/services/marketClockService.js';
 import { executionScheduler } from './server/services/executionScheduler.js';
 import { validationPipelineService } from './server/services/validationPipelineService.js';
+import { operationBatchService } from './server/services/operationBatchService.js';
 import { encryptSecret } from './server/services/cryptoService.js';
 import { Account, Bot, Trade } from './src/types.js';
 
@@ -1041,6 +1042,21 @@ async function startServer() {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${result.pipeline_id}.csv"`);
     res.send([header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n'));
+  });
+
+  app.post('/api/validation/operations/validate', (req, res) => {
+    try {
+      const result = operationBatchService.validate(req.body || {});
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || 'Lote de operações inválido.' });
+    }
+  });
+
+  app.get('/api/validation/operations/last', (_req, res) => {
+    const result = operationBatchService.getLast();
+    if (!result) return res.status(404).json({ error: 'Nenhum lote de operações validado nesta sessão.' });
+    res.json(result);
   });
 
   app.post('/api/validation/promote', async (_req, res) => {

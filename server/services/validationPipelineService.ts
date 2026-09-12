@@ -10,6 +10,7 @@ import type {
   ValidationPipelineResult,
   WfaBacktestReport,
   WfaStrategyFamily,
+  PortfolioPolicy,
 } from '../../src/types.js';
 import { fetchHistoricalBars, type HistoricalDataResult } from './validationMarketDataService.js';
 import {
@@ -63,6 +64,16 @@ function normalizeRequest(request: ValidationPipelineRequest): Required<Validati
   };
 }
 
+function portfolioPolicy(initialCapital: number, positionPct: number): PortfolioPolicy {
+  return {
+    initial_capital_usd: initialCapital,
+    max_position_pct: positionPct * 100,
+    max_concurrent_positions: 5,
+    max_gross_exposure_pct: 10,
+    max_risk_per_trade_pct: 1,
+  };
+}
+
 function decorateBacktest(
   report: WfaBacktestReport,
   asset: string,
@@ -74,6 +85,7 @@ function decorateBacktest(
     asset,
     data_source: source,
     survivorship_check: survivorship,
+    operations: report.operations.map((operation) => ({ ...operation, asset })),
   };
 }
 
@@ -258,6 +270,9 @@ async function createPromotionDecision(
     mode: 'PAPER',
     broker: 'ALPACA_PAPER',
     max_position_pct: 2,
+    max_concurrent_positions: 5,
+    max_gross_exposure_pct: 10,
+    max_risk_per_trade_pct: 1,
     daily_loss_limit_pct: 5,
     kill_switch_drawdown_pct: 15,
     reevaluation_period_days: 14,
@@ -303,10 +318,14 @@ export class ValidationPipelineService {
     const barsByAsset = Object.fromEntries(dataResults.map((result) => [result.asset, result.bars]));
     const source = primaryData?.source || 'UNKNOWN';
     const dataErrors = dataResults.filter((result) => result.error).map((result) => `${result.asset}: ${result.error}`);
+    const policy = portfolioPolicy(normalized.initial_capital, normalized.position_pct);
     const costs: BacktestCosts = {
       feeRateBps: normalized.fee_rate_bps,
       slippageBps: normalized.slippage_bps,
       positionPct: normalized.position_pct,
+      maxConcurrentPositions: policy.max_concurrent_positions,
+      maxGrossExposurePct: policy.max_gross_exposure_pct / 100,
+      maxRiskPerTradePct: policy.max_risk_per_trade_pct / 100,
     };
     const families = normalized.strategy_families;
     const firstCandidate: StrategyCandidate = candidateGrid(families)[0] || {
@@ -350,6 +369,7 @@ export class ValidationPipelineService {
         errors: dataErrors,
       },
       backtest,
+      portfolio_policy: policy,
       tournament,
       promotion,
       status,

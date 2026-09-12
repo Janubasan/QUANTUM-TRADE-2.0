@@ -47,6 +47,8 @@ A resposta inclui `backtest`, `tournament` e `promotion` em JSON. Os principais 
 - `GET /api/validation/last` — último relatório da sessão;
 - `GET /api/validation/manifest` — informa se existe um deployment validado;
 - `GET /api/validation/last.csv` — exporta o ranking de candidatas em CSV;
+- `POST /api/validation/operations/validate` — valida um lote de operações antes de qualquer envio.
+- `GET /api/validation/operations/last` — recupera o último lote auditado.
 - `POST /api/validation/promote` — reexecuta o checklist sobre o último tournament; não ignora nenhuma falha.
 
 A tela **WFA Validation Gate** no menu Backtest executa o mesmo fluxo sem esconder falhas de dados.
@@ -65,7 +67,20 @@ Todos precisam passar:
 - custos abaixo de 40% do lucro bruto;
 - ativo, lote, fractional shares e conta de USD 100 verificados na Alpaca PAPER.
 
-O deployment aprovado fixa `mode: PAPER`, `max_position_pct: 2`, limite de perda diária de 5%, kill switch de drawdown de 15% e reavaliação a cada 14 dias. Nenhum código do pipeline altera `PAPER` para `LIVE`.
+O deployment aprovado fixa `mode: PAPER`, `max_position_pct: 2`, no máximo 5 posições simultâneas, exposição bruta de 10%, risco por operação de 1%, limite de perda diária de 5%, kill switch de drawdown de 15% e reavaliação a cada 14 dias. Nenhum código do pipeline altera `PAPER` para `LIVE`.
+
+## Lote de operações
+
+`POST /api/validation/operations/validate` recebe várias operações e valida, em ordem:
+
+- direção, entrada, stop e alvo;
+- notional máximo de USD 2 por posição;
+- risco máximo de USD 1 por stop;
+- até 5 posições e USD 10 de exposição agregada;
+- IDs e ativos duplicados;
+- divergência máxima de 2% entre entrada e cotação informada.
+
+O resultado é `VALID_BATCH`, `PARTIAL_BATCH` ou `REJECTED_BATCH`, com motivo e checks de cada operação. Validar o lote não envia ordens à corretora.
 
 ## Limitações honestas
 

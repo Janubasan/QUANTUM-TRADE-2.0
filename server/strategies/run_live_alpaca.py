@@ -34,6 +34,10 @@ def load_approved_manifest() -> dict:
         raise SystemExit("PAPER runner bloqueado: broker/mode incompatível com o runner seguro.")
     if float(manifest.get("max_position_pct", 0)) > 2:
         raise SystemExit("PAPER runner bloqueado: position sizing acima de 2%.")
+    if int(manifest.get("max_concurrent_positions", 0)) > 5:
+        raise SystemExit("PAPER runner bloqueado: posições simultâneas acima de 5.")
+    if float(manifest.get("max_gross_exposure_pct", 0)) > 10:
+        raise SystemExit("PAPER runner bloqueado: exposição bruta acima de 10%.")
     return manifest
 
 

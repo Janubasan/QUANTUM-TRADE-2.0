@@ -252,6 +252,8 @@ git push -u origin main --force
 - `GET /api/validation/last`: recupera o último relatório da sessão.
 - `GET /api/validation/manifest`: informa se há deployment PAPER aprovado.
 - `GET /api/validation/last.csv`: exporta o ranking auditável em CSV.
+- `POST /api/validation/operations/validate`: valida múltiplas operações contra os limites de posição, risco e exposição.
+- `GET /api/validation/operations/last`: recupera o último lote auditado.
 - `POST /api/validation/promote`: revalida o último resultado sem ignorar gates.
 - `GET /api/audit/report`: Gera o relatório completo de conformidade e integridade em Markdown.
 - `GET /api/regulator/scheduler`: Retorna o modo ativo (`scalp` / `normal`) e regras das bolsas.

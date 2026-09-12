@@ -13,6 +13,8 @@ import {
   ValidationPipelineRequest,
   ValidationPipelineResult,
   PromotionGateResult,
+  OperationBatchValidationRequest,
+  OperationBatchValidationResult,
 } from '../types.js';
 
 async function requestJson<T>(url: string, options?: RequestInit, retries = 3): Promise<T> {
@@ -198,6 +200,16 @@ export async function fetchLastValidationPipeline(): Promise<ValidationPipelineR
 
 export async function promoteLastValidation(): Promise<PromotionGateResult> {
   return requestJson<PromotionGateResult>('/api/validation/promote', { method: 'POST' });
+}
+
+export async function validateOperationBatch(
+  req: OperationBatchValidationRequest
+): Promise<OperationBatchValidationResult> {
+  return requestJson<OperationBatchValidationResult>('/api/validation/operations/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
 }
 
 export async function fetchValidationManifest(): Promise<{

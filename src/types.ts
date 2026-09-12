@@ -263,6 +263,23 @@ export interface ValidationMetrics {
   worst_trade: number;
 }
 
+export interface WfaTradeRecord {
+  trade_id: string;
+  asset: string;
+  side: 'LONG' | 'SHORT';
+  entry_time: string;
+  exit_time: string;
+  entry_price: number;
+  exit_price: number;
+  quantity: number;
+  notional_usd: number;
+  gross_pnl: number;
+  net_pnl: number;
+  fees: number;
+  slippage: number;
+  validation_status: 'VALID';
+}
+
 export interface WfaWindowReport {
   window_id: number;
   train: [string, string];
@@ -273,6 +290,16 @@ export interface WfaWindowReport {
   train_metrics: ValidationMetrics;
   validation_metrics: ValidationMetrics;
   test_metrics: ValidationMetrics;
+  valid_operations: number;
+  rejected_operations: number;
+}
+
+export interface PortfolioPolicy {
+  initial_capital_usd: number;
+  max_position_pct: number;
+  max_concurrent_positions: number;
+  max_gross_exposure_pct: number;
+  max_risk_per_trade_pct: number;
 }
 
 export interface WfaBacktestReport {
@@ -310,6 +337,10 @@ export interface WfaBacktestReport {
   status: ValidationRunStatus;
   invalid_reasons: string[];
   windows: WfaWindowReport[];
+  valid_operations: number;
+  rejected_operations: number;
+  operations: WfaTradeRecord[];
+  portfolio_policy: PortfolioPolicy;
   monte_carlo_ci_95_return?: [number, number];
   monte_carlo_ci_95_drawdown?: [number, number];
   parameter_stability?: 'STABLE' | 'UNSTABLE';
@@ -374,6 +405,9 @@ export interface PromotionDeployment {
   mode: 'PAPER';
   broker: 'ALPACA_PAPER';
   max_position_pct: 2;
+  max_concurrent_positions: 5;
+  max_gross_exposure_pct: 10;
+  max_risk_per_trade_pct: 1;
   daily_loss_limit_pct: 5;
   kill_switch_drawdown_pct: 15;
   reevaluation_period_days: 14;
@@ -385,6 +419,68 @@ export interface PromotionGateResult {
   deployment: PromotionDeployment | null;
   next_action: 'START_PAPER_BOT' | 'RETURN_TO_TOURNAMENT' | 'HUMAN_REVIEW';
   reasons: string[];
+}
+
+export type OperationSide = 'LONG' | 'SHORT';
+export type OperationValidationStatus = 'VALID' | 'REJECTED';
+
+export interface OperationCandidate {
+  operation_id?: string;
+  asset: string;
+  side: OperationSide;
+  timestamp?: string;
+  entry_price: number;
+  stop_price: number;
+  take_profit_price: number;
+  quantity?: number;
+  notional_usd?: number;
+  market_price?: number;
+  source?: string;
+}
+
+export interface OperationValidationResult {
+  operation_id: string;
+  asset: string;
+  status: OperationValidationStatus;
+  reasons: string[];
+  rule_checks: {
+    prices_consistent: boolean;
+    notional_within_limit: boolean;
+    risk_within_limit: boolean;
+    exposure_within_limit: boolean;
+    no_duplicate_asset: boolean;
+    market_price_guard: boolean;
+  };
+  side: OperationSide;
+  entry_price: number;
+  stop_price: number;
+  take_profit_price: number;
+  quantity: number;
+  notional_usd: number;
+  risk_usd: number;
+  exposure_after_usd: number;
+}
+
+export interface OperationBatchValidationRequest {
+  initial_capital_usd?: number;
+  existing_exposure_usd?: number;
+  max_position_pct?: number;
+  max_concurrent_positions?: number;
+  max_gross_exposure_pct?: number;
+  max_risk_per_trade_pct?: number;
+  operations: OperationCandidate[];
+}
+
+export interface OperationBatchValidationResult {
+  batch_id: string;
+  status: 'VALID_BATCH' | 'PARTIAL_BATCH' | 'REJECTED_BATCH';
+  policy: PortfolioPolicy;
+  accepted_count: number;
+  rejected_count: number;
+  accepted_notional_usd: number;
+  accepted_risk_usd: number;
+  operations: OperationValidationResult[];
+  generated_at: string;
 }
 
 export interface ValidationPipelineRequest {
@@ -411,6 +507,7 @@ export interface ValidationPipelineResult {
     errors: string[];
   };
   backtest: WfaBacktestReport | null;
+  portfolio_policy: PortfolioPolicy;
   tournament: TournamentResult;
   promotion: PromotionGateResult;
   status: ValidationRunStatus;

@@ -18,23 +18,37 @@ class RiskDecision:
 class PaperRiskEngine:
     MIN_EQUITY_USD = 80.0
     MAX_POSITION_PCT = 0.02
+    MAX_CONCURRENT_POSITIONS = 5
+    MAX_GROSS_EXPOSURE_PCT = 0.10
     DAILY_LOSS_LIMIT_PCT = 0.05
     KILL_SWITCH_DRAWDOWN_PCT = 0.15
 
-    def check_order(self, current_equity: float, proposed_notional: float) -> RiskDecision:
+    def check_order(
+        self,
+        current_equity: float,
+        proposed_notional: float,
+        existing_exposure: float = 0.0,
+        open_positions: int = 0,
+    ) -> RiskDecision:
         equity = float(current_equity)
         notional = float(proposed_notional)
+        exposure = float(existing_exposure)
         if equity < self.MIN_EQUITY_USD:
             return RiskDecision(False, "KILL_SWITCH: equity abaixo de USD 80.00", 0.0)
         if equity <= 0 or notional <= 0:
             return RiskDecision(False, "Ordem sem equity/notional positivo", 0.0)
         maximum = equity * self.MAX_POSITION_PCT
+        gross_limit = equity * self.MAX_GROSS_EXPOSURE_PCT
+        if open_positions >= self.MAX_CONCURRENT_POSITIONS:
+            return RiskDecision(False, "Limite de posições simultâneas atingido", maximum)
         if notional > maximum:
             return RiskDecision(
                 False,
                 f"Position sizing excede {self.MAX_POSITION_PCT:.2%} da equity",
                 maximum,
             )
+        if exposure + notional > gross_limit:
+            return RiskDecision(False, "Exposição bruta excede 10% da equity", maximum)
         return RiskDecision(True, "OK", maximum)
 
     def daily_loss_allows_order(self, current_equity: float, session_start_equity: float) -> bool:

@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import type {
   HistoricalBar,
+  PortfolioPolicy,
   TournamentCandidateSummary,
+  WfaTradeRecord,
   TournamentResult,
   ValidationMetrics,
   WfaBacktestReport,
@@ -13,6 +15,9 @@ export interface BacktestCosts {
   feeRateBps: number;
   slippageBps: number;
   positionPct: number;
+  maxConcurrentPositions?: number;
+  maxGrossExposurePct?: number;
+  maxRiskPerTradePct?: number;
 }
 
 export interface StrategyCandidate {
@@ -60,6 +65,16 @@ function round(value: number, digits = 6): number {
   if (!Number.isFinite(value)) return 0;
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+function portfolioPolicyFor(initialCapital: number, costs: BacktestCosts): PortfolioPolicy {
+  return {
+    initial_capital_usd: round(initialCapital, 2),
+    max_position_pct: round(Math.min(costs.positionPct, 0.02) * 100, 4),
+    max_concurrent_positions: Math.min(Math.max(1, Math.floor(costs.maxConcurrentPositions || 5)), 5),
+    max_gross_exposure_pct: round(Math.min(costs.maxGrossExposurePct || 0.1, 0.1) * 100, 4),
+    max_risk_per_trade_pct: round(Math.min(costs.maxRiskPerTradePct || 0.01, 0.01) * 100, 4),
+  };
 }
 
 function stableStringify(value: unknown): string {
@@ -429,6 +444,25 @@ function combineRuns(runs: InternalRun[], timeframe: string, initialCapital: num
   };
 }
 
+function exportOperations(trades: InternalTrade[]): WfaTradeRecord[] {
+  return trades.slice(0, 1000).map((trade, index) => ({
+    trade_id: `wfa-operation-${String(index + 1).padStart(5, '0')}`,
+    asset: '',
+    side: trade.side === 1 ? 'LONG' : 'SHORT',
+    entry_time: trade.entryTime,
+    exit_time: trade.exitTime,
+    entry_price: round(trade.entryPrice),
+    exit_price: round(trade.exitPrice),
+    quantity: round(trade.quantity),
+    notional_usd: round(Math.abs(trade.entryPrice * trade.quantity), 2),
+    gross_pnl: round(trade.grossPnl),
+    net_pnl: round(trade.netPnl),
+    fees: round(trade.fees),
+    slippage: round(trade.slippage),
+    validation_status: 'VALID',
+  }));
+}
+
 function buildWindows(barCount: number): WindowDefinition[] {
   if (barCount < MIN_BARS) return [];
   let testLength = Math.max(5, Math.floor(barCount * 0.05));
@@ -512,6 +546,8 @@ function metricsForCandidate(
       train_metrics: train.metrics,
       validation_metrics: validation.metrics,
       test_metrics: test.metrics,
+      valid_operations: test.trades.length,
+      rejected_operations: 0,
     });
   }
 
@@ -566,6 +602,10 @@ function metricsForCandidate(
     status,
     invalid_reasons: invalidReasons,
     windows: windowReports,
+    valid_operations: outOfSample.trades.length,
+    rejected_operations: 0,
+    operations: exportOperations(outOfSample.trades),
+    portfolio_policy: portfolioPolicyFor(initialCapital, costs),
   };
   return { report, internal: { inSample, validation, outOfSample } };
 }
@@ -611,6 +651,10 @@ export function runWfaBacktest(
       status: 'NO_DATA',
       invalid_reasons: ['Nenhum candle real foi carregado.'],
       windows: [],
+      valid_operations: 0,
+      rejected_operations: 0,
+      operations: [],
+      portfolio_policy: portfolioPolicyFor(initialCapital, costs),
     };
     return { report, internal: { inSample: emptyRun(initialCapital), validation: emptyRun(initialCapital), outOfSample: emptyRun(initialCapital) } };
   }

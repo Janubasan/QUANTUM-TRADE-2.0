@@ -27,6 +27,8 @@ const second = runWfaBacktest(bars, candidate, '1d', 100, costs);
 assert.equal(first.report.status, 'VALID');
 assert.equal(first.report.walk_forward_windows, 8);
 assert.equal(first.report.lookahead_check, 'PASSED');
+assert.equal(first.report.valid_operations, first.report.n_trades);
+assert.equal(first.report.portfolio_policy.max_concurrent_positions, 5);
 assert.equal(first.report.reproducibility_hash, second.report.reproducibility_hash);
 assert.deepEqual(
   monteCarloConfidence(first.internal.outOfSample, [17, 31], 20),

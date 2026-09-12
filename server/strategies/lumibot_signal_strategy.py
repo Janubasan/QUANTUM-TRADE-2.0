@@ -36,10 +36,27 @@ class SignalStrategy(Strategy):
         except (AttributeError, TypeError, ValueError):
             return float(self.get_cash() or 0)
 
-    def _submit_checked(self, order, price: float, quantity: float) -> bool:
+    def _submit_checked(self, order, symbol: str, price: float, quantity: float, is_closing: bool = False) -> bool:
         equity = self._equity()
         self.equity_peak = max(self.equity_peak, equity)
-        decision = risk_engine.check_order(equity, abs(float(quantity) * float(price)))
+        existing_exposure = 0.0
+        open_positions = 0
+        for position_symbol in self.symbols:
+            position = self.get_position(position_symbol)
+            if position is None:
+                continue
+            position_price = self.get_last_price(position_symbol) or 0
+            existing_exposure += abs(float(position.quantity) * float(position_price))
+            open_positions += 1
+        if is_closing:
+            existing_exposure = max(0.0, existing_exposure - abs(float(quantity) * float(price)))
+            open_positions = max(0, open_positions - 1)
+        decision = risk_engine.check_order(
+            equity,
+            abs(float(quantity) * float(price)),
+            existing_exposure=existing_exposure,
+            open_positions=open_positions,
+        )
         if not decision.approved:
             self.log_message(f"RISK BLOCK: {decision.reason}")
             return False
@@ -72,13 +89,13 @@ class SignalStrategy(Strategy):
                 qty = self._size_position(cash, float(last_price))
                 if qty > 0:
                     order = self.create_order(symbol, qty, "buy")
-                    if self._submit_checked(order, float(last_price), qty):
+                    if self._submit_checked(order, symbol, float(last_price), qty):
                         self.log_message(f"[{symbol}] COMPRA {qty:.6f} @ ~{last_price:.2f} (score {sig['score']})")
 
             elif sig["direction"] == "sell" and position is not None:
                 qty = float(position.quantity)
                 order = self.create_order(symbol, qty, "sell")
-                if self._submit_checked(order, float(last_price), qty):
+                if self._submit_checked(order, symbol, float(last_price), qty, is_closing=True):
                     self.log_message(f"[{symbol}] VENDA {qty:.6f} @ ~{last_price:.2f} (score {sig['score']})")
 
     def _size_position(self, cash: float, price: float) -> float:

@@ -26,6 +26,7 @@ import type {
   ValidationMetrics,
 } from '../types.js';
 import { promoteLastValidation, runValidationPipeline } from '../services/api.js';
+import { OperationBatchCard } from './OperationBatchCard';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
@@ -382,6 +383,13 @@ export function BacktestingView() {
                 <div className="rounded-2xl border border-white/5 bg-black/20 p-3"><p className="text-[10px] text-white/40 uppercase">Monte Carlo DD</p><p className="text-lg text-white font-mono font-bold mt-1">{result.tournament.monte_carlo_ci_95_drawdown ? `${metric(result.tournament.monte_carlo_ci_95_drawdown[1])}%` : '—'}</p></div>
               </div>
 
+              <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><p className="text-xs uppercase tracking-[0.18em] font-bold text-cyan-200/70">Portfólio sistematizado</p><p className="text-[11px] text-white/45 mt-1">Cada operação OOS abaixo respeita o mesmo contrato de risco do lote e fica auditável no JSON.</p></div>
+                  <div className="flex flex-wrap gap-2 text-[10px] font-mono text-white/70"><span className="rounded-full border border-white/10 px-2 py-1">válidas: {result.backtest?.valid_operations || 0}</span><span className="rounded-full border border-white/10 px-2 py-1">simultâneas: {result.portfolio_policy.max_concurrent_positions}</span><span className="rounded-full border border-white/10 px-2 py-1">exposição: {result.portfolio_policy.max_gross_exposure_pct}%</span></div>
+                </div>
+              </div>
+
               <div className="rounded-2xl border border-white/5 bg-black/20 p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                   <div><p className="text-xs uppercase tracking-[0.18em] font-bold text-white/60">Promotion gate</p><p className="text-sm text-white mt-1">{result.tournament.champion_strategy_id || 'Nenhuma campeã elegível'}</p></div>
@@ -413,6 +421,8 @@ export function BacktestingView() {
           )}
         </section>
       </div>
+
+      <OperationBatchCard />
     </div>
   );
 }
