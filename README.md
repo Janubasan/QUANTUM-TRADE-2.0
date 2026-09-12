@@ -71,7 +71,12 @@ Projetado para operar de forma contínua com modos de execução **Scalp (Sub-mi
 
 ### 7. 🧠 Inteligência Coletiva & Entanglement Quântico
 - **Score Coletivo Ponderado**: Matriz de correlação e consenso entre múltiplos bots e indicadores para autorizar sinais de alta probabilidade.
-- **Backtesting Coletivo**: Simulação com dados históricos reais e estresse de slippage/taxas para avaliar a resiliência das estratégias.
+- **WFA Validation Gate**: pipeline separado de dados reais → backtest determinístico → tournament → gate binário de promoção para Alpaca Paper com banca de USD 100. O motor rejeita look-ahead, custos omitidos, amostra OOS insuficiente e ausência de dados; `NO_VIABLE_STRATEGY` é uma saída válida.
+
+### 8. 🔬 Pesquisa Walk-Forward e promoção segura
+- O engine em `server/validation/walkForwardEngine.ts` usa 8 janelas expanding `TRAIN | VALIDATION | TEST`, slippage/taxas explícitos, Monte Carlo reprodutível e sensibilidade de parâmetros.
+- `POST /api/validation/run` consulta Alpaca Market Data ou Yahoo Finance, registra o provider e só grava `server/data/validated_strategy.json` depois de consultar a API real da Alpaca PAPER.
+- O runner Python recusa iniciar sem um manifest `APPROVED`, fixa `PAPER=true`, limita posição a 2% e ativa kill switch abaixo de USD 80.
 
 ### 8. 💼 Gestão Multi-Broker & Contas Demo/Real
 - Suporte simultâneo a múltiplas contas (**Demo USD**, **Demo BRL**, **Real Binance**, **Real MetaMask Web3**, **Real MT5**).
@@ -109,6 +114,9 @@ janutrade/
 │   └── tester/
 │       ├── demoRunner.ts            # Ingestão de testes e estresse de mercado
 │       └── reportGenerator.ts       # Gerador de relatórios de conformidade em Markdown
+├── server/validation/
+│   ├── walkForwardEngine.ts         # Backtest determinístico + WFA + robustez
+│   └── walkForwardEngine.test.ts    # Testes de reprodutibilidade sem runtime randomness
 ├── src/
 │   ├── components/
 │   │   ├── DashboardView.tsx        # Painel central de operações, saldos on-chain e PnL ao vivo
@@ -238,6 +246,13 @@ git push -u origin main --force
 
 ### 🛡️ Auditoria Criptográfica & Scheduler
 - `GET /api/audit/chain`: Consulta a cadeia completa de blocos criptográficos imutáveis.
+
+### 🔬 WFA Validation Gate
+- `POST /api/validation/run`: carrega dados OHLCV reais e executa backtest, tournament e promotion gate.
+- `GET /api/validation/last`: recupera o último relatório da sessão.
+- `GET /api/validation/manifest`: informa se há deployment PAPER aprovado.
+- `GET /api/validation/last.csv`: exporta o ranking auditável em CSV.
+- `POST /api/validation/promote`: revalida o último resultado sem ignorar gates.
 - `GET /api/audit/report`: Gera o relatório completo de conformidade e integridade em Markdown.
 - `GET /api/regulator/scheduler`: Retorna o modo ativo (`scalp` / `normal`) e regras das bolsas.
 - `POST /api/regulator/scheduler/mode`: Alterna o modo de execução entre `scalp` e `normal`.

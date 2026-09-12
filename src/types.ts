@@ -226,6 +226,196 @@ export interface BacktestResult {
   tradeLog: Trade[];
 }
 
+// ============================================================================
+// Walk-forward validation pipeline (real data only)
+// ============================================================================
+
+export type ValidationDataSource = 'YAHOO_FINANCE' | 'ALPACA_MARKET_DATA' | 'CCXT' | 'UNKNOWN';
+export type WfaStrategyFamily = 'trend_following' | 'mean_reversion' | 'breakout';
+export type ValidationRunStatus = 'VALID' | 'INVALID_BACKTEST' | 'NO_DATA' | 'NO_VIABLE_STRATEGY';
+
+export interface HistoricalBar {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ValidationMetrics {
+  n_trades: number;
+  win_rate: number;
+  profit_factor: number;
+  expectancy: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+  max_drawdown: number;
+  cagr: number;
+  total_return: number;
+  gross_profit: number;
+  gross_loss: number;
+  fees_total: number;
+  slippage_total: number;
+  avg_trade: number;
+  best_trade: number;
+  worst_trade: number;
+}
+
+export interface WfaWindowReport {
+  window_id: number;
+  train: [string, string];
+  validation: [string, string];
+  test: [string, string];
+  selected_strategy_id?: string;
+  selected_params?: Record<string, number>;
+  train_metrics: ValidationMetrics;
+  validation_metrics: ValidationMetrics;
+  test_metrics: ValidationMetrics;
+}
+
+export interface WfaBacktestReport {
+  strategy_id: string;
+  strategy_family: WfaStrategyFamily;
+  params: Record<string, number>;
+  asset: string;
+  timeframe: string;
+  period_train: [string, string];
+  period_test: [string, string];
+  walk_forward_windows: number;
+  // Flat aliases make the JSON consumable by execution agents without
+  // discarding the full train/validation/OOS metric objects below.
+  n_trades: number;
+  win_rate: number;
+  profit_factor: number;
+  expectancy: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+  max_drawdown: number;
+  cagr: number;
+  metrics_in_sample: ValidationMetrics;
+  metrics_validation: ValidationMetrics;
+  metrics_out_of_sample: ValidationMetrics;
+  oos_efficiency_ratio: number;
+  fees_total: number;
+  slippage_total: number;
+  data_source: ValidationDataSource;
+  data_start: string;
+  data_end: string;
+  lookahead_check: 'PASSED' | 'FAILED';
+  survivorship_check: 'PASSED' | 'FAILED' | 'NOT_APPLICABLE';
+  reproducibility_hash: string;
+  status: ValidationRunStatus;
+  invalid_reasons: string[];
+  windows: WfaWindowReport[];
+  monte_carlo_ci_95_return?: [number, number];
+  monte_carlo_ci_95_drawdown?: [number, number];
+  parameter_stability?: 'STABLE' | 'UNSTABLE';
+  cross_asset_validation?: 'PASSED' | 'FAILED' | 'NOT_TESTED';
+}
+
+export interface TournamentCandidateSummary {
+  strategy_id: string;
+  strategy_family: WfaStrategyFamily;
+  params: Record<string, number>;
+  status: 'SURVIVED' | 'FILTERED' | 'PASSED_WALK_FORWARD' | 'PASSED_ROBUSTNESS';
+  filter_reasons: string[];
+  metrics_in_sample: ValidationMetrics;
+  metrics_out_of_sample: ValidationMetrics;
+  oos_efficiency_ratio: number;
+  score?: number;
+  backtest_hash: string;
+}
+
+export interface TournamentResult {
+  tournament_id: string;
+  candidates_tested: number;
+  candidates_survived_stat_filter: number;
+  candidates_passed_walk_forward: number;
+  candidates_passed_robustness: number;
+  champion_strategy_id: string;
+  champion_params: Record<string, number>;
+  champion_metrics_in_sample: ValidationMetrics | null;
+  champion_metrics_out_of_sample: ValidationMetrics | null;
+  monte_carlo_ci_95_return: [number, number] | null;
+  monte_carlo_ci_95_drawdown: [number, number] | null;
+  parameter_stability: 'STABLE' | 'UNSTABLE' | 'NOT_TESTED';
+  cross_asset_validation: 'PASSED' | 'FAILED' | 'NOT_TESTED';
+  status: 'CHAMPION_FOUND' | 'NO_VIABLE_STRATEGY';
+  data_source: ValidationDataSource;
+  data_start: string;
+  data_end: string;
+  candidates: TournamentCandidateSummary[];
+  rejection_reasons: string[];
+  reproducibility_hash: string;
+}
+
+export interface PromotionChecklistResults {
+  status_champion_found: { passed: boolean; value: string; threshold: string };
+  oos_efficiency_ratio: { passed: boolean; value: number; threshold: number };
+  sharpe_out_of_sample: { passed: boolean; value: number; threshold: number };
+  max_drawdown_out_of_sample: { passed: boolean; value: number; threshold: number };
+  monte_carlo_worst_drawdown: { passed: boolean; value: number; threshold: number };
+  parameter_stability: { passed: boolean; value: string; threshold: string };
+  n_trades_out_of_sample: { passed: boolean; value: number; threshold: number };
+  cross_asset_validation: { passed: boolean; value: string; justification: string };
+  cost_ratio: { passed: boolean; value: number; threshold: number };
+  capital_compatibility: { passed: boolean; value: string; reason: string };
+}
+
+export interface PromotionDeployment {
+  deployment_id: string;
+  strategy_id: string;
+  params: Record<string, number>;
+  approved_at: string;
+  initial_equity_usd: 100;
+  mode: 'PAPER';
+  broker: 'ALPACA_PAPER';
+  max_position_pct: 2;
+  daily_loss_limit_pct: 5;
+  kill_switch_drawdown_pct: 15;
+  reevaluation_period_days: 14;
+}
+
+export interface PromotionGateResult {
+  decision: 'APPROVED' | 'REJECTED';
+  checklist_results: PromotionChecklistResults;
+  deployment: PromotionDeployment | null;
+  next_action: 'START_PAPER_BOT' | 'RETURN_TO_TOURNAMENT' | 'HUMAN_REVIEW';
+  reasons: string[];
+}
+
+export interface ValidationPipelineRequest {
+  asset: string;
+  validation_assets?: string[];
+  timeframe: string;
+  lookback_days: number;
+  initial_capital: number;
+  position_pct?: number;
+  fee_rate_bps?: number;
+  slippage_bps?: number;
+  strategy_families?: WfaStrategyFamily[];
+}
+
+export interface ValidationPipelineResult {
+  pipeline_id: string;
+  requested_at: string;
+  data: {
+    source: ValidationDataSource;
+    assets: string[];
+    bars_by_asset: Record<string, number>;
+    start: string | null;
+    end: string | null;
+    errors: string[];
+  };
+  backtest: WfaBacktestReport | null;
+  tournament: TournamentResult;
+  promotion: PromotionGateResult;
+  status: ValidationRunStatus;
+}
+
 export interface SystemLog {
   id: string;
   timestamp: string;

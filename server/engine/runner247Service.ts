@@ -22,7 +22,8 @@ export interface Runner247Metrics {
 }
 
 export class Runner247Service {
-  private status: 'running' | 'paused' | 'maintenance' = 'running';
+  private status: 'running' | 'paused' | 'maintenance' = 'paused';
+  private deploymentApproved = false;
   private startedAt: number = Date.now();
   private totalTicks: number = 0;
   private autoRecoveryCount: number = 0;
@@ -30,11 +31,21 @@ export class Runner247Service {
   private firebaseSyncTimer: NodeJS.Timeout | null = null;
   private tickTimestamps: number[] = [];
 
-  constructor() {
-    this.start();
+  public setDeploymentApproval(approved: boolean) {
+    this.deploymentApproved = approved;
+    if (!approved) this.pause();
+  }
+
+  public isDeploymentApproved(): boolean {
+    return this.deploymentApproved;
   }
 
   public start() {
+    if (!this.deploymentApproved) {
+      this.status = 'paused';
+      console.warn('⏸️ [Runner 24/7] Bloqueado: nenhum manifest WFA APPROVED/PAPER foi encontrado.');
+      return;
+    }
     if (this.intervalTimer) return;
     this.status = 'running';
     this.startedAt = Date.now();
@@ -62,12 +73,21 @@ export class Runner247Service {
   }
 
   public resume() {
+    if (!this.deploymentApproved) {
+      this.status = 'paused';
+      store.addLog('RULE', '⏸️ Runner 24/7 bloqueado: exige deployment WFA APPROVED/PAPER.');
+      return;
+    }
     this.status = 'running';
     store.addLog('INFO', '▶️ Motor 24/7 Runner retomado com sucesso.');
     this.syncWithFirebase();
   }
 
   public toggle(): boolean {
+    if (!this.deploymentApproved) {
+      this.status = 'paused';
+      return false;
+    }
     if (this.status === 'running') {
       this.pause();
       return false;

@@ -31,6 +31,7 @@ import { TOKEN_REGISTRY, resolveToken, hasToken } from './server/services/onchai
 import type { ChainKey } from './server/services/onchain/chainRegistry.js';
 import { marketClockService } from './server/services/marketClockService.js';
 import { executionScheduler } from './server/services/executionScheduler.js';
+import { validationPipelineService } from './server/services/validationPipelineService.js';
 import { encryptSecret } from './server/services/cryptoService.js';
 import { Account, Bot, Trade } from './src/types.js';
 
@@ -153,6 +154,13 @@ async function startServer() {
   });
 
   app.post('/api/runner/toggle', (_req, res) => {
+    if (!runner247Service.isDeploymentApproved()) {
+      return res.status(403).json({
+        error: 'Runner bloqueado: execute o WFA Promotion Gate e obtenha um deployment PAPER APPROVED.',
+        isRunning: false,
+        metrics: runner247Service.getMetrics(),
+      });
+    }
     const isRunning = runner247Service.toggle();
     res.json({ isRunning, metrics: runner247Service.getMetrics() });
   });
@@ -264,8 +272,25 @@ async function startServer() {
     }
   });
 
-  // Start background bot worker engine & multi-source price aggregator
-  botWorker.start();
+  // Execution engines stay asleep until a WFA-approved PAPER manifest exists.
+  // Market-data aggregation is safe to start; it does not submit orders.
+  const approvedManifest = await validationPipelineService.getManifest();
+  const executionApproved = approvedManifest?.status === 'APPROVED' && approvedManifest?.mode === 'PAPER';
+  if (executionApproved) {
+    runner247Service.setDeploymentApproval(true);
+    if (process.env.ENABLE_PAPER_RUNNER === 'true') {
+      runner247Service.start();
+    } else {
+      console.warn('⏸️ [Startup] Runner PAPER aguardando ENABLE_PAPER_RUNNER=true; nenhum loop de execução foi iniciado.');
+    }
+    if (process.env.ENABLE_LEGACY_BOT_WORKER === 'true') {
+      botWorker.start();
+    } else {
+      console.warn('⏸️ [Startup] Worker legado desativado; use o runner PAPER aprovado explicitamente.');
+    }
+  } else {
+    console.warn('⏸️ [Startup] Bots e Runner 24/7 bloqueados até um manifest WFA APPROVED/PAPER.');
+  }
   priceAggregatorService.start();
 
   // Hydrate persistent state from Firestore Cloud Vault (anti-reset safeguard)
@@ -923,6 +948,9 @@ async function startServer() {
   });
 
   app.post('/api/bots/:id/force-trades', async (req, res) => {
+    if (!runner247Service.isDeploymentApproved()) {
+      return res.status(403).json({ error: 'Execução bloqueada: exige deployment WFA PAPER APPROVED.' });
+    }
     try {
       const { id } = req.params;
       const count = Number(req.body?.count) || 5;
@@ -952,9 +980,76 @@ async function startServer() {
     res.json(collectiveService.getEntanglementData());
   });
 
-  app.post('/api/collective/backtest', (req, res) => {
-    const result = collectiveService.runBacktest(req.body);
+  // The old collective endpoint is kept for compatibility with integrations.
+  // New validation must go through the real-data WFA pipeline below.
+  app.post('/api/collective/backtest', (_req, res) => {
+    res.status(410).json({
+      error: 'Endpoint legado descontinuado: use POST /api/validation/run para um backtest com dados históricos reais.',
+      next: '/api/validation/run',
+    });
+  });
+
+  // ========================================================================
+  // REAL-DATA WALK-FORWARD VALIDATION PIPELINE
+  // Data -> deterministic backtest -> tournament -> paper promotion gate.
+  // This endpoint never fabricates candles and never starts a broker.
+  // ========================================================================
+  app.post('/api/validation/run', async (req, res) => {
+    try {
+      const result = await validationPipelineService.run(req.body || {});
+      res.json(result);
+    } catch (error: any) {
+      console.error('[Validation] Pipeline error:', error);
+      res.status(500).json({
+        error: error?.message || 'Falha ao executar o pipeline de validação.',
+        status: 'INVALID_BACKTEST',
+      });
+    }
+  });
+
+  app.get('/api/validation/last', (_req, res) => {
+    const result = validationPipelineService.getLastRun();
+    if (!result) return res.status(404).json({ error: 'Nenhum pipeline executado nesta sessão.' });
     res.json(result);
+  });
+
+  app.get('/api/validation/manifest', async (_req, res) => {
+    const manifest = await validationPipelineService.getManifest();
+    res.json({ exists: Boolean(manifest), manifest });
+  });
+
+  app.get('/api/validation/last.csv', (_req, res) => {
+    const result = validationPipelineService.getLastRun();
+    if (!result) return res.status(404).json({ error: 'Nenhum pipeline executado nesta sessão.' });
+    const escapeCsv = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const header = ['strategy_id', 'strategy_family', 'status', 'n_trades_oos', 'win_rate_oos', 'profit_factor_oos', 'sharpe_oos', 'sortino_oos', 'max_drawdown_oos', 'total_return_oos', 'oos_efficiency_ratio', 'score', 'backtest_hash'];
+    const rows = result.tournament.candidates.map((candidate) => [
+      candidate.strategy_id,
+      candidate.strategy_family,
+      candidate.status,
+      candidate.metrics_out_of_sample.n_trades,
+      candidate.metrics_out_of_sample.win_rate,
+      candidate.metrics_out_of_sample.profit_factor,
+      candidate.metrics_out_of_sample.sharpe,
+      candidate.metrics_out_of_sample.sortino,
+      candidate.metrics_out_of_sample.max_drawdown,
+      candidate.metrics_out_of_sample.total_return,
+      candidate.oos_efficiency_ratio,
+      candidate.score ?? '',
+      candidate.backtest_hash,
+    ]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.pipeline_id}.csv"`);
+    res.send([header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n'));
+  });
+
+  app.post('/api/validation/promote', async (_req, res) => {
+    try {
+      const result = await validationPipelineService.promoteLastRun();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || 'Falha no gate de promoção.' });
+    }
   });
 
   // System Logs

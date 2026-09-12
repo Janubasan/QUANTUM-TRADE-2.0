@@ -140,7 +140,7 @@ export function Navbar({
     { id: 'validation', label: 'Validação RAG & Hashes', icon: ShieldCheck },
     { id: 'webhook', label: 'Webhook & Sinais', icon: Webhook },
     { id: 'entanglement', label: 'Entanglement & Sinais', icon: BrainCircuit },
-    { id: 'backtest', label: 'Backtest Coletivo', icon: LineChart },
+    { id: 'backtest', label: 'WFA Validation Gate', icon: LineChart },
     { id: 'history', label: 'Histórico & Logs', icon: History },
   ];
 

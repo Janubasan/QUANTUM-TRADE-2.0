@@ -1,10 +1,4 @@
-import {
-  SignalExperience,
-  EntanglementData,
-  BacktestRequest,
-  BacktestResult,
-  Trade,
-} from '../../src/types.js';
+import { EntanglementData } from '../../src/types.js';
 import { store } from '../data/store.js';
 
 export class CollectiveService {
@@ -64,109 +58,13 @@ export class CollectiveService {
   }
 
   /**
-   * Runs a collaborative backtest using collective signal experiences
+   * Backtests are intentionally not simulated in this legacy service.
+   * Use /api/validation/run, which loads timestamped OHLCV and applies WFA.
    */
-  runBacktest(req: BacktestRequest): BacktestResult {
-    const days = req.daysHistory || 30;
-    const totalSimulatedCandles = days * 24 * 4; // 15m candles
-    const initialBalance = req.initialCapital || 100;
-    let balance = initialBalance;
-    let currentProfit = 0;
-
-    const equityCurve: { timestamp: string; balance: number; buyAndHold: number }[] = [];
-    const tradeLog: Trade[] = [];
-
-    let winningTrades = 0;
-    let totalTrades = 0;
-    let maxDrawdownPercent = 0;
-    let peakBalance = initialBalance;
-    let profitRuleBlockedCount = 0;
-
-    const now = Date.now();
-    const startTime = now - days * 86400000;
-    let buyAndHoldPrice = 100;
-
-    // Simulate trades over history
-    const tradeInterval = Math.floor(totalSimulatedCandles / 25); // ~25 trades
-    for (let i = 0; i < totalSimulatedCandles; i++) {
-      const time = new Date(startTime + i * 15 * 60000).toISOString();
-      const buyHoldFluctuation = (Math.sin(i / 20) * 0.05) + (i / totalSimulatedCandles) * 0.15;
-      const currentBuyAndHold = Number((100 * (1 + buyHoldFluctuation)).toFixed(2));
-
-      if (i % tradeInterval === 0 && i > 0) {
-        totalTrades++;
-        const riskAmount = Number((balance * (req.riskPercent / 100)).toFixed(2));
-        currentProfit = balance - initialBalance;
-
-        // Enforce Profit Rule check
-        const isAllowedByProfitRule = !req.enforceProfitRule || totalTrades === 1 || currentProfit >= riskAmount;
-
-        if (!isAllowedByProfitRule) {
-          profitRuleBlockedCount++;
-        } else {
-          // Determine outcome based on collective win rate ~ 72%
-          const isWin = Math.random() < 0.72;
-          const pnlPercent = isWin ? req.riskPercent * 2.0 : -req.riskPercent;
-          const tradePnl = Number((balance * (pnlPercent / 100)).toFixed(2));
-
-          balance = Number((balance + tradePnl).toFixed(2));
-          if (isWin) winningTrades++;
-
-          if (balance > peakBalance) peakBalance = balance;
-          const drawdown = ((peakBalance - balance) / peakBalance) * 100;
-          if (drawdown > maxDrawdownPercent) maxDrawdownPercent = Number(drawdown.toFixed(2));
-
-          tradeLog.push({
-            id: `bt-${i}`,
-            accountId: 'demo-backtest',
-            accountName: 'Simulação Backtest',
-            broker: 'binance',
-            symbol: req.symbol,
-            direction: isWin ? 'LONG' : 'SHORT',
-            entryPrice: 340000 + i * 10,
-            currentPrice: 340000 + i * 10 + (isWin ? 500 : -300),
-            quantity: 0.0001,
-            tpPrice: 341000,
-            slPrice: 339000,
-            status: 'closed',
-            pnl: tradePnl,
-            pnlPercent,
-            entryTime: time,
-            closeTime: time,
-            notes: `Backtest ${req.strategy} | Regra Lucro: APROVADA`,
-          });
-        }
-      }
-
-      if (i % 20 === 0 || i === totalSimulatedCandles - 1) {
-        equityCurve.push({
-          timestamp: time.split('T')[0],
-          balance: Number(balance.toFixed(2)),
-          buyAndHold: currentBuyAndHold,
-        });
-      }
-    }
-
-    const totalPnl = Number((balance - initialBalance).toFixed(2));
-    const totalPnlPercent = Number(((totalPnl / initialBalance) * 100).toFixed(2));
-    const winRate = totalTrades > 0 ? Number(((winningTrades / (totalTrades - profitRuleBlockedCount)) * 100).toFixed(1)) : 0;
-
-    return {
-      strategy: req.strategy,
-      symbol: req.symbol,
-      totalTrades: totalTrades - profitRuleBlockedCount,
-      winningTrades,
-      winRate,
-      initialBalance,
-      finalBalance: balance,
-      totalPnl,
-      totalPnlPercent,
-      maxDrawdownPercent,
-      profitRuleBlockedCount,
-      equityCurve,
-      tradeLog,
-    };
+  runBacktest(): never {
+    throw new Error('Backtest legado descontinuado; use o pipeline WFA com dados reais.');
   }
+
 }
 
 export const collectiveService = new CollectiveService();

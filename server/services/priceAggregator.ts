@@ -1,5 +1,7 @@
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 import { store } from '../data/store.js';
+
+const yahooFinance = new YahooFinance();
 
 export interface PriceSourceData {
   binance?: number;

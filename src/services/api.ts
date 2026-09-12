@@ -10,6 +10,9 @@ import {
   WebhookAuditLog,
   WebhookConfig,
   SessionStats,
+  ValidationPipelineRequest,
+  ValidationPipelineResult,
+  PromotionGateResult,
 } from '../types.js';
 
 async function requestJson<T>(url: string, options?: RequestInit, retries = 3): Promise<T> {
@@ -177,6 +180,31 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestResult>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
+}
+
+export async function runValidationPipeline(
+  req: ValidationPipelineRequest
+): Promise<ValidationPipelineResult> {
+  return requestJson<ValidationPipelineResult>('/api/validation/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export async function fetchLastValidationPipeline(): Promise<ValidationPipelineResult> {
+  return requestJson<ValidationPipelineResult>('/api/validation/last');
+}
+
+export async function promoteLastValidation(): Promise<PromotionGateResult> {
+  return requestJson<PromotionGateResult>('/api/validation/promote', { method: 'POST' });
+}
+
+export async function fetchValidationManifest(): Promise<{
+  exists: boolean;
+  manifest: Record<string, unknown> | null;
+}> {
+  return requestJson('/api/validation/manifest');
 }
 
 export async function fetchLogs(): Promise<SystemLog[]> {
